@@ -55,7 +55,7 @@ if fileType == '.adibin':
     labchartHeader = deque(unpack_from("<4cld5l2d4l",labchartContents,0))
 
     # On valid LabChart binary files the first four bytes spell "CFWB"
-    if ''.join([labchartHeader.popleft() for _ in range(4)]) <> 'CFWB':
+    if ''.join([labchartHeader.popleft() for _ in range(4)]) != 'CFWB':
         print('Incorrect file format.')
         exit()
 
