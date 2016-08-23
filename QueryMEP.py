@@ -6,11 +6,12 @@ matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.spatial as spatial
+from copy import copy,deepcopy
 
 class dataCursor(object):
     """Display the x,y location of the nearest data point."""
     def __init__(self, ax, x, y, rescale, shift, offsets=(-20, 20)):
-        x = np.asarray(x, dtype='float')
+        self.x = np.asarray(x, dtype='float')
         y = np.asarray(y, dtype='float')
         self._points = np.column_stack((x, y))
         self.rescale = rescale
@@ -18,216 +19,194 @@ class dataCursor(object):
         self.tree = spatial.cKDTree(self._points)
         self.ax = ax
         self.fig = ax.figure
-        self.dot = ax.scatter([x.min()], [y.min()], s=130, color='green', alpha=0.7)
-        self.annotation = self.ax.annotate('', xy=(0, 0), ha = 'right', xytext = offsets, textcoords = 'offset points', va = 'bottom', bbox = dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.75), arrowprops = dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+        self.dot = ax.scatter([0], [y.min()], s=130, color='green', alpha=0.7,animated=True)
+        self.annotation = self.ax.annotate('', xy=(0, 0), ha = 'right', xytext = offsets, textcoords = 'offset points', va = 'bottom', bbox = dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.75,animated=True), arrowprops = dict(arrowstyle='->', connectionstyle='arc3,rad=0',animated=True),animated=True)
+        self.background = None
         plt.connect('motion_notify_event', self)
 
     def __call__(self, event):
         if event.inaxes:
+            if not self.background:
+                self.background = self.fig.canvas.copy_from_bbox(self.ax.bbox)
             x, y = self._points[self.tree.query((event.xdata, event.ydata), k=1, p=2)[1]]
+            event.canvas.restore_region(self.background)
             self.annotation.xy = x, y
             self.annotation.set_text('x: {x:0.2f}\ny: {y:0.2f}'.format(x=(x * self.rescale) + self.shift, y=y))
             self.dot.set_offsets((x, y))
-            event.canvas.draw()
+            self.ax.draw_artist(self.annotation)
+            self.ax.draw_artist(self.dot)
+            event.canvas.blit(self.ax.bbox)
 
-def queryWindow(channelName,channelData,tickrate,pretrigger_time,windowType):
-    global queryManager
-    queryManager = {'currentTrial':None,'rectData':None,'onset':None,'onsetMarker':None,'offset':None,'offsetMarker':None,'continueQuery':True,'cursor':None,'fill':None}
+    def update(self,y):
+        y = np.asarray(y, dtype='float')
+        self._points = np.column_stack((self.x, y))
+        self.tree = spatial.cKDTree(self._points)
 
-    redArrow = {'facecolor':'red','shrink':0.05,'frac':1.0}
-    leftOffset = (-30,15)
-    rightOffset = (30,15)
-    highlightColor = 'cyan'
+class queryManager(object):
 
-    def keyRelease(event):
-        global queryManager
+    offsets = {'left':(-30,15),'right':(30,15),'top':(0,15),'bottom':(0,-20)}
+    colours = {'user':'red','original':'green','fill':'cyan','plot':'black'}
 
-        if event.key == 'ctrl+enter':
-            if askokcancel('Accept All?','Accept all remaining trials?'):
-                queryManager['continueQuery'] = False
+    def __init__(self,channelName,data,tickrate,pretriggerTime,windowType):
+        self.channelName = channelName
+        self.windowType = windowType
+        self.tickrate = tickrate
+        self.pretriggerTime = pretriggerTime    
+        self.currentTrial = 0
+        self.currentPlot = None
+        self.fig = plt.figure()        
+        self.axes = self.fig.add_subplot(1,1,1)
+        self.points = {}
+        self.pMarkers = {}
+        if windowType:
+            self.points['original'] = [[data[i]['window'][1],data[i]['window'][2]] for i in range(len(data))]
+            self.data = [map(abs,data[i]['data']) for i in range(len(data))]
+            self.p1Offset = queryManager.offsets['left']
+            self.p2Offset = queryManager.offsets['right']
+            self.p1Label = 'Onset'
+            self.p2Label = 'Offset'
+            self.fill = None
+        else:
+            self.points['original'] = [[data[i]['ptp'][1],data[i]['ptp'][2]] for i in range(len(data))]
+            self.data = [copy(data[i]['data']) for i in range(len(data))]
+            self.p1Offset = queryManager.offsets['top']
+            self.p2Offset = queryManager.offsets['bottom']
+            self.p1Label = 'P1'
+            self.p2Label = 'P2'
+            self.fill = None
+        self.points['user'] = deepcopy(self.points['original'])
+        self.axes.set_ylabel(r'$\mu$V')
+        self.axes.set_xlabel('time (ms)')
+        self.axes.set_xticks(range(0,len(self.data[0]) + 1,100),[(x * tickrate) - pretriggerTime for x in range(0,len(self.data[0]) + 1,100)])
+        self.axes.set_xlim([0, len(self.data[0])])
+        self.axes.format_coord = lambda x, y: ''
+        self.fig.tight_layout()
+        self.fig.canvas.manager.window.showMaximized()
+        self.fig.canvas.mpl_connect('key_release_event', self.keyRelease)
+        self.fig.canvas.mpl_connect('button_press_event', self.mousePress)
+        self.currentPlot, = self.axes.plot(self.data[0],color=queryManager.colours['plot'])
+        self.originalMarkers = {}
+        self.originalMarkers['p1'] = self.axes.annotate(self.p1Label,color='white',xy=(0,0),xytext=self.p1Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['original'],'shrink':0.05,'frac':1.0}, horizontalalignment='center',visible=False)
+        self.originalMarkers['p2'] = self.axes.annotate(self.p2Label,color='white',xy=(0,0),xytext=self.p2Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['original'],'shrink':0.05,'frac':1.0}, horizontalalignment='center',visible=False)
+        self.userMarkers = {}
+        self.userMarkers['p1'] = self.axes.annotate(self.p1Label,xy=(0,0),xytext=self.p1Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['user'],'shrink':0.05,'frac':1.0}, horizontalalignment='center',visible=False)
+        self.userMarkers['p2'] = self.axes.annotate(self.p2Label,xy=(0,0),xytext=self.p2Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['user'],'shrink':0.05,'frac':1.0}, horizontalalignment='center',visible=False)
+        self.updateDisplay()
+        self.cursor = dataCursor(self.axes, range(len(self.data[0])), self.data[0],tickrate, -pretriggerTime)
+        plt.show()
+
+    def updateDisplay(self):
+        self.fig.suptitle(self.channelName + ': Trial ' + str(self.currentTrial + 1))
+        self.currentPlot.set_ydata(self.data[self.currentTrial])
+        ylim = max(250,max(map(abs,self.data[self.currentTrial]))) * 1.1
+        if self.windowType:
+            self.axes.set_ylim([0,ylim])
+        else:
+            self.axes.set_ylim([-ylim,ylim])
+        if self.fill:
+            self.fill.remove()
+            del self.fill
+            self.fill = None
+        if self.points['original'][self.currentTrial][0]:
+            self.originalMarkers['p1'].xy = (self.points['original'][self.currentTrial][0],self.data[self.currentTrial][self.points['original'][self.currentTrial][0]])
+            self.originalMarkers['p2'].xy = (self.points['original'][self.currentTrial][1],self.data[self.currentTrial][self.points['original'][self.currentTrial][1]])
+            self.originalMarkers['p1'].set_visible(True)
+            self.originalMarkers['p2'].set_visible(True)
+        else:
+            self.originalMarkers['p1'].set_visible(False)
+            self.originalMarkers['p2'].set_visible(False)
+        if self.points['user'][self.currentTrial][0]:
+            self.userMarkers['p1'].xy = (self.points['user'][self.currentTrial][0],self.data[self.currentTrial][self.points['user'][self.currentTrial][0]])
+            self.userMarkers['p1'].set_visible(True)
+        else:
+            self.userMarkers['p1'].set_visible(False)
+        if self.points['user'][self.currentTrial][1]:
+            self.userMarkers['p2'].xy = (self.points['user'][self.currentTrial][1],self.data[self.currentTrial][self.points['user'][self.currentTrial][1]])
+            self.userMarkers['p2'].set_visible(True)
+            if self.windowType and self.points['user'][self.currentTrial][0]:
+                self.fill = self.axes.fill_between(range(*self.points['user'][self.currentTrial]),self.data[self.currentTrial][self.points['user'][self.currentTrial][0]:self.points['user'][self.currentTrial][1]],facecolor=queryManager.colours['fill'])
+                self.axes.draw_artist(self.fill)
+        else:
+            self.userMarkers['p2'].set_visible(False)
+        self.axes.draw_artist(self.originalMarkers['p1'])
+        self.axes.draw_artist(self.originalMarkers['p2'])
+        self.axes.draw_artist(self.userMarkers['p1'])
+        self.axes.draw_artist(self.userMarkers['p2'])
+        self.axes.draw_artist(self.currentPlot)
+
+    def keyRelease(self,event):
+        if event.key == 'enter':
+            if askokcancel('Accept?','Accept all trials?'):
                 plt.close()
-        elif event.key == 'enter':
-            plt.close()
         elif event.key in {'delete','backspace'}:
-            queryManager['onset'] = queryManager['offset'] = None
-            plt.close()
+            self.userMarkers['p1'].set_visible(False)
+            self.userMarkers['p2'].set_visible(False)
+            self.axes.draw_artist(self.userMarkers['p1'])
+            self.axes.draw_artist(self.userMarkers['p2'])
+            self.points['user'][self.currentTrial] = (None,None)
+            if self.windowType:
+                self.fill.remove()
+                del self.fill
+                self.fill = None
+            self.fig.canvas.draw()
+            self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
         elif event.key == 'escape':
             if askokcancel('Quit?','Quit analysis?'):
                 exit()
+        elif event.key in {'left','right'}:
+            newTrial = max(0,self.currentTrial - 1) if event.key == 'left' else min(len(self.data) - 1,self.currentTrial + 1)
+            if newTrial != self.currentTrial:
+                self.currentTrial = newTrial
+                self.updateDisplay()
+                self.fig.canvas.draw()
+                self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
+                self.cursor.update(self.data[newTrial])
 
-    def mousePress(event):
-        global queryManager
-
+    def mousePress(self,event):
         if (event.button == 1) and event.xdata:
-            queryManager['onset'] = int(round(queryManager['cursor'].annotation.xy[0]))
-            xyLoc = (queryManager['onset'],queryManager['rectData'][queryManager['onset']])
-            if queryManager['onsetMarker']:
-                queryManager['onsetMarker'].xy = xyLoc
-                queryManager['onsetMarker'].xyann = leftOffset
-            else:
-                queryManager['onsetMarker'] = event.inaxes.annotate('Onset',xy=xyLoc,xytext=leftOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            if queryManager['offset']:
-                if queryManager['fill']:
-                    queryManager['fill'].remove()
-                queryManager['fill'] = event.inaxes.fill_between(range(queryManager['onset'],queryManager['offset']),queryManager['rectData'][queryManager['onset']:queryManager['offset']],facecolor=highlightColor)
-            event.canvas.draw()
+            self.points['user'][self.currentTrial][0] = int(round(self.cursor.annotation.xy[0]))
+            self.userMarkers['p1'].xy = (self.points['user'][self.currentTrial][0],self.data[self.currentTrial][self.points['user'][self.currentTrial][0]])
+            self.userMarkers['p1'].set_visible(True)
+            self.axes.draw_artist(self.userMarkers['p1'])
+            if self.points['user'][self.currentTrial][1] and self.windowType:
+                if self.fill:
+                    self.fill.remove()
+                    del self.fill
+                    self.fill = None
+                self.fill = self.axes.fill_between(range(*self.points['user'][self.currentTrial]),self.data[self.currentTrial][self.points['user'][self.currentTrial][0]:self.points['user'][self.currentTrial][1]],facecolor=queryManager.colours['fill'])
+            self.fig.canvas.draw()
+            self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
         elif (event.button == 3) and event.xdata:
-            queryManager['offset'] = int(round(queryManager['cursor'].annotation.xy[0]))
-            xyLoc = (queryManager['offset'],queryManager['rectData'][queryManager['offset']])
-            if queryManager['offsetMarker']:
-                queryManager['offsetMarker'].xy = xyLoc
-                queryManager['offsetMarker'].xyann = rightOffset
-            else:
-                queryManager['offsetMarker'] = event.inaxes.annotate('Offset',xy=xyLoc,xytext=rightOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            if queryManager['onset']:
-                if queryManager['fill']:
-                    queryManager['fill'].remove()
-                queryManager['fill'] = event.inaxes.fill_between(range(queryManager['onset'],queryManager['offset']),queryManager['rectData'][queryManager['onset']:queryManager['offset']],facecolor=highlightColor)
-            event.canvas.draw()
+            self.points['user'][self.currentTrial][1] = int(round(self.cursor.annotation.xy[0]))
+            self.userMarkers['p2'].xy = (self.points['user'][self.currentTrial][1],self.data[self.currentTrial][self.points['user'][self.currentTrial][1]])
+            self.userMarkers['p2'].set_visible(True)
+            self.axes.draw_artist(self.userMarkers['p2'])
+            if self.points['user'][self.currentTrial][0] and self.windowType:
+                if self.fill:
+                    self.fill.remove()
+                    del self.fill
+                    self.fill = None
+                self.fill = self.axes.fill_between(range(*self.points['user'][self.currentTrial]),self.data[self.currentTrial][self.points['user'][self.currentTrial][0]:self.points['user'][self.currentTrial][1]],facecolor=queryManager.colours['fill'])
+            self.fig.canvas.draw()
+            self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-    for j in range(len(channelData)): 
-        if queryManager['continueQuery']:
-            queryManager['currentTrial'] = channelData[j]
-            if queryManager['currentTrial']['window'] and queryManager['currentTrial']['window'][0]:
-                queryManager['onset'] = queryManager['currentTrial']['window'][1]
-                queryManager['offset'] = queryManager['currentTrial']['window'][2]
+def queryData(channelName,channelData,tickrate,pretriggerTime,windowType = None):
+    myQuery = queryManager(channelName,channelData,tickrate,pretriggerTime,windowType)
+    if windowType:
+        for j in range(len(channelData)):
+            onset,offset = myQuery.points['user'][j]
+            if onset and offset:
+                windowAmplitude = np.trapz(myQuery.data[j][onset:offset + 1],dx=1)
+                if windowType == 2:
+                    windowAmplitude /= (offset - onset) + 1
             else:
-                queryManager['onset'] = None
-                queryManager['offset'] = None
-            fig = plt.figure()
-            fig.suptitle(channelName + ': Trial ' + str(j + 1))
-            ax = fig.add_subplot(1,1,1)
-            queryManager['rectData'] = map(abs,queryManager['currentTrial']['data'])
-            plt.plot(queryManager['rectData'],color='black')
-            plt.ylim([0,ax.get_ylim()[1]])
-            plt.ylabel(r'$\mu$V')
-            plt.xlim([0, len(queryManager['currentTrial']['data'])])
-            plt.xlabel('time (ms)')
-            plt.xticks(range(0,len(queryManager['currentTrial']['data']) + 1,100),[(x * tickrate) - pretrigger_time for x in range(0,len(queryManager['currentTrial']['data']) + 1,100)])
-            plt.tight_layout()
-            if queryManager['onset']:
-                xyLoc = (queryManager['onset'],queryManager['rectData'][queryManager['onset']])
-                queryManager['onsetMarker'] = ax.annotate('Onset',xy=xyLoc,xytext=leftOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            elif queryManager['onsetMarker']:
-                queryManager['onsetMarker'].remove()
-                queryManager['onsetMarker'] = None
-            if queryManager['offset']:
-                xyLoc = (queryManager['offset'],queryManager['rectData'][queryManager['offset']])
-                queryManager['offsetMarker'] = ax.annotate('Offset',xy=xyLoc,xytext=rightOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            elif queryManager['offsetMarker']:
-                queryManager['offsetMarker'].remove()
-                queryManager['offsetMarker'] = None
-            if queryManager['onset']:
-                queryManager['fill'] = ax.fill_between(range(queryManager['onset'],queryManager['offset']),queryManager['rectData'][queryManager['onset']:queryManager['offset']],facecolor=highlightColor)
-            plt.get_current_fig_manager().window.showMaximized()
-            ax.format_coord = lambda x, y: ''
-            queryManager['cursor'] = dataCursor(ax, range(len(queryManager['currentTrial']['data'])), queryManager['rectData'],tickrate, -pretrigger_time)
-            fig.canvas.mpl_connect('button_press_event', mousePress)
-            fig.canvas.mpl_connect('key_release_event', keyRelease)
-            plt.show()
-            if queryManager['onset'] and queryManager['offset']:
-                if windowType == 1:
-                    queryManager['currentTrial']['window'] = (np.trapz(queryManager['rectData'][queryManager['onset']:queryManager['offset']],dx=1),queryManager['onset'],queryManager['offset'])
-                elif windowType == 2:
-                    queryManager['currentTrial']['window'] = (np.mean(queryManager['rectData'][queryManager['onset']:queryManager['offset']]),queryManager['onset'],queryManager['offset'])               
+                windowAmplitude = onset = offset = None
+            channelData[j]['window'] = (windowAmplitude,onset,offset)
+    else:
+        for j in range(len(channelData)):
+            p1,p2 = myQuery.points['user'][j]
+            if p1 and p2:
+                ptp = myQuery.data[j][p1] - myQuery.data[j][p2]
             else:
-                queryManager['currentTrial']['window'] = None
-            del fig
-
-def queryPeaks(channelName,channelData,tickrate,pretrigger_time):
-    global queryManager
-    queryManager = {'currentTrial':None,'p1':None,'p1Marker':None,'p2':None,'p2Marker':None,'continueQuery':True,'cursor':None}
-
-    greenArrow = {'facecolor':'green','shrink':0.1,'frac':1.0}
-    redArrow = greenArrow.copy()
-    redArrow['facecolor'] = 'red'
-    upOffset = (0,15)
-    downOffset = (0,-20)
-
-    def keyRelease(event):
-        global queryManager
-
-        if event.key == 'ctrl+enter':
-            if askokcancel('Accept All?','Accept all remaining trials?'):
-                queryManager['continueQuery'] = False
-                plt.close()
-        elif event.key == 'enter':
-            plt.close()
-        elif event.key in {'delete','backspace'}:
-            queryManager['p1'] = queryManager['p2'] = None
-            plt.close()
-        elif event.key == 'escape':
-            if askokcancel('Quit?','Quit analysis?'):
-                exit()
-        
-    def mousePress(event):
-        global queryManager
-
-        if (event.button == 1) and event.xdata:
-            queryManager['p1'] = int(round(queryManager['cursor'].annotation.xy[0]))
-            xyLoc = (queryManager['p1'],queryManager['currentTrial']['data'][queryManager['p1']])
-            if queryManager['p1Marker']:
-                queryManager['p1Marker'].xy = xyLoc
-                queryManager['p1Marker'].xyann = upOffset
-            else:
-                queryManager['p1Marker'] = event.inaxes.annotate('P1',xy=xyLoc,xytext=upOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            event.canvas.draw()
-        elif (event.button == 3) and event.xdata:
-            queryManager['p2'] = int(round(queryManager['cursor'].annotation.xy[0]))
-            xyLoc = (queryManager['p2'],queryManager['currentTrial']['data'][queryManager['p2']])
-            if queryManager['p2Marker']:
-                queryManager['p2Marker'].xy = xyLoc
-                queryManager['p2Marker'].xyann = downOffset
-            else:
-                queryManager['p2Marker'] = event.inaxes.annotate('P2',xy=xyLoc,xytext=downOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            event.canvas.draw()
-    
-    for j in range(len(channelData)): 
-        if queryManager['continueQuery']:
-            queryManager['currentTrial'] = channelData[j]
-            if queryManager['currentTrial']['ptp']:
-                queryManager['p1'] = queryManager['currentTrial']['ptp'][1]
-                queryManager['p2'] = queryManager['currentTrial']['ptp'][2]
-            else:
-                queryManager['p1'] = None
-                queryManager['p2'] = None
-            fig = plt.figure()
-            fig.suptitle(channelName + ': Trial ' + str(j + 1))
-            ax = fig.add_subplot(1,1,1)
-            plt.plot(queryManager['currentTrial']['data'],color='black')
-            plt.ylabel(r'$\mu$V')
-            plt.xlim([0, len(queryManager['currentTrial']['data'])])
-            plt.xlabel('time (ms)')
-            plt.xticks(range(0,len(queryManager['currentTrial']['data']) + 1,100),[(x * tickrate) - pretrigger_time for x in range(0,len(queryManager['currentTrial']['data']) + 1,100)])
-            plt.tight_layout()
-            for p in queryManager['currentTrial']['peaks']:
-                xyLoc = (p,queryManager['currentTrial']['data'][p])
-                ax.annotate('X',color='white',xy=xyLoc,xytext=upOffset,textcoords="offset points",arrowprops=greenArrow)
-            if queryManager['p1']:
-                xyLoc = (queryManager['p1'],queryManager['currentTrial']['data'][queryManager['p1']])
-                queryManager['p1Marker'] = ax.annotate('P1',xy=xyLoc,xytext=upOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            elif queryManager['p1Marker']:
-                queryManager['p1Marker'].remove()
-                queryManager['p1Marker'] = None
-            for v in queryManager['currentTrial']['valleys']:
-                xyLoc = (v,queryManager['currentTrial']['data'][v])
-                ax.annotate('X',color='white',xy=xyLoc,xytext=downOffset,textcoords="offset points",arrowprops=greenArrow)
-            if queryManager['p2']:
-                xyLoc = (queryManager['p2'],queryManager['currentTrial']['data'][queryManager['p2']])
-                queryManager['p2Marker'] = ax.annotate('P2',xy=xyLoc,xytext=downOffset,textcoords="offset points",arrowprops=redArrow, horizontalalignment='center')
-            elif queryManager['p2Marker']:
-                queryManager['p2Marker'].remove()
-                queryManager['p2Marker']= None
-            plt.get_current_fig_manager().window.showMaximized()
-            ax.format_coord = lambda x, y: ''
-            queryManager['cursor'] = dataCursor(ax, range(len(queryManager['currentTrial']['data'])), queryManager['currentTrial']['data'],tickrate, -pretrigger_time)
-            fig.canvas.mpl_connect('button_press_event', mousePress)
-            fig.canvas.mpl_connect('key_release_event', keyRelease)
-            plt.show()
-            if queryManager['p1'] and queryManager['p2']:
-                queryManager['currentTrial']['ptp'] = (queryManager['currentTrial']['data'][queryManager['p1']] - queryManager['currentTrial']['data'][queryManager['p2']],queryManager['p1'],queryManager['p2'])            
-                queryManager['currentTrial']['peaks'].add(queryManager['p1'])
-                queryManager['currentTrial']['valleys'].add(queryManager['p2'])
-            else:
-                queryManager['currentTrial']['ptp'] = None
-            del fig
+                ptp = p1 = p2 = None
+            channelData[j]['ptp'] = (ptp,p1,p2)
