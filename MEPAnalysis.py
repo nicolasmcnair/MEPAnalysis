@@ -7,26 +7,25 @@ from cPickle import dump
 
 # User-Defined Variables
 processing = {}
-processing['totalNTrials'] = 180                     # Total number of trials; this must evenly divide with the number of samples
+processing['totalNTrials'] = 198                     # Total number of trials; this must evenly divide with the number of samples
 processing['skipNTrials'] = 0                        # Skip this many trials at the beginning of the file
 processing['polarity'] = -1                          # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'constant'                   # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
+processing['saveMEP'] = False                        # Whether to save a .mep file
 processing['timeWindow'] = (-50,100)                 # Beginning and end time (in milliseconds) for output .csv file (set to None to include entire EMG trace)
 processing['peakAnalysis'] = {}
 processing['peakAnalysis']['analyse'] = 1            # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys (will only occur if 'auto' or 'query' set to True)
 processing['peakAnalysis']['auto'] = True            # Try automated peak detection (will only occur if ['analyse'] set to something other than 0)
-processing['peakAnalysis']['query'] = True           # Manually inspect peaks (will only occur if ['analyse'] set to something other than 0)
+processing['peakAnalysis']['query'] = False          # Manually inspect peaks (will only occur if ['analyse'] set to something other than 0)
 processing['peakAnalysis']['timeWindow'] = (15,50)   # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
 processing['peakAnalysis']['maxPeakInterval'] = 10   # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without set limit (set to None to ignore)
-processing['peakAnalysis']['prominence'] = 100       # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 10% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
+processing['peakAnalysis']['prominence'] = 50        # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
+# Movement onset and offset are determined based on an 'Integrated Profile' of the rectified EMG data (see: Allison G T 2003 Trunk muscle onset detection technique for EMG signals with ECG artefact J. Electromyogr. Kinesiol. 13 209–16)
 processing['windowAnalysis'] = {}
 processing['windowAnalysis']['analyse'] = 1          # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude (will only occur if 'auto' or 'query' set to True)
 processing['windowAnalysis']['auto'] = True          # Try automated time window analysis (will only occur if ['analyse'] set to something other than 0)
-processing['windowAnalysis']['query'] = True         # Manually inspect time windows (will only occur if ['analyse'] set to something other than 0)
-processing['windowAnalysis']['baseline'] = (-200,-5) # Beginning and end time (in milliseconds) to calculate baseline amplitude (set to None to include everything up to trigger onset)
-processing['windowAnalysis']['startTime'] = 15       # Beginning time (in milliseconds) to look for MEP onset
-processing['windowAnalysis']['sdThreshold'] = 8      # Standard deviation threshold for detecting MEP onset
-processing['windowAnalysis']['nThreshold'] = 8       # Number of trials that signal must be above/below threshold for determining MEP onset/offset
+processing['windowAnalysis']['query'] = False        # Manually inspect time windows (will only occur if ['analyse'] set to something other than 0)
+processing['windowAnalysis']['startTime'] = 10       # Beginning time (in milliseconds) to look for MEP onset
 
 ########################################################################################################################################
 #                                                                                                                                      #
@@ -34,11 +33,14 @@ processing['windowAnalysis']['nThreshold'] = 8       # Number of trials that sig
 #                                                                                                                                      #
 ########################################################################################################################################
 
+SAVECSV = True
+SAVEMEP = processing['saveMEP']
+PROMCORRECTION = 0.2
+
 try:
     # Get file
     filename = fileHeader = channels = None
-    saveCSVFile = True
-    saveMEPFile = False
+
     Tk().withdraw()
     filename = askopenfilename(filetypes = [('MEP analysis file','*.mep'),('LabChart binary files', '*.adibin')])
     if not filename:
@@ -256,64 +258,38 @@ try:
                         # return valley value, bases, and prominence (if above threshold) - adjusting return locations for restricted sampling
                         if (peakProminence >= prominenceCriterion):
                             outValleys.append((valley + samplingBoundary[0],data[valley],peakProminence))
-                    prominenceCriterion -= (prominence * 0.1)
+                    prominenceCriterion -= (prominence * PROMCORRECTION)
             return [outPeaks,outValleys]
 
     # Load time window detection function(s) if required
     if processing['windowAnalysis']['auto'] and processing['windowAnalysis']['analyse'] and not skipAnalysis:
-        from numpy import mean,std,trapz
+        from numpy import trapz, interp
+        from operator import itemgetter
 
-        # Convert time variables from milliseconds to samples
-        if processing['windowAnalysis']['baseline']:
-            baselineTimeIndices = [convertTimeToSample(x) for x in processing['windowAnalysis']['baseline']]
-        else:
-            baselineTimeIndices = [0, convertTimeToSample(0)]
+        # Convert start time from milliseconds to samples
         startTimeIndex = convertTimeToSample(processing['windowAnalysis']['startTime']) 
 
-        def extractWindow(data,baselineBoundary,startingPoint,sdThreshold,nThreshold,windowType):
+        def extractWindow(data,startingPoint,windowType):
             # Rectify signal
-            data = map(abs,data)
-            # Calculate baseline threshold
-            baselineThreshold = std(data[baselineBoundary[0]:baselineBoundary[1] + 1]) * sdThreshold
-            # Start looking for values above threshold
-            sample = startingPoint
-            exceeded = 0
-            onset = offset = windowAmplitude = None
-            while sample < len(data):
-                # If we find a value above threshold, add to current count above threshold
-                if data[sample] > baselineThreshold:
-                    exceeded += 1
-                    # If we reach the threshold for number of samples over baseline, set onset and break out of while loop
-                    if exceeded == nThreshold:
-                        onset = (sample - nThreshold) + 1
-                        break
-                # If we find a value below threshold, reset current count to zero
-                else:
-                    exceeded = 0
-                sample += 1
-            #  If we found a valid onset, start looking for values below threshold (default to end of data if not found)
-            if onset:
-                offset = len(data) - 1
-                exceeded = 0
-                sample += 1
-                while sample < len(data):
-                    # If we find a value above threshold, add to current count above threshold
-                    if data[sample] < baselineThreshold:
-                        exceeded += 1
-                        # If we reach the threshold for number of samples over baseline, set onset and break out of while loop
-                        if exceeded == nThreshold:
-                            offset = (sample - nThreshold) + 1
-                            break
-                    # If we find a value below threshold, reset current count to zero
-                    else:
-                        exceeded = 0
-                    sample += 1
-            # If onset found, get window amplitude
-            if onset:
-                windowAmplitude = trapz(data[onset:offset + 1],dx=1)
-                # Average amplitude is based on area
-                if windowType == 2:
-                    windowAmplitude /= (offset - onset) + 1
+            data = map(abs,data[startTimeIndex:])
+            # Calculate cumulative signal
+            cumSignal = [sum(data[:x + 1]) for x in range(len(data))]
+            # Calculate reference line
+            refSignal = interp(range(len(cumSignal)),[0,len(cumSignal)-1],[cumSignal[0],cumSignal[-1]])
+            # Get integrated profile
+            integProf = [refSignal[x] - cumSignal[x] for x in range(len(cumSignal))]
+            # Max difference is MEP onset
+            onset = max(enumerate(integProf), key=itemgetter(1))[0]
+            # Min difference (after onset) is MEP offset
+            offset = min(enumerate(integProf[onset:]), key=itemgetter(1))[0] + onset
+            # Get window amplitude
+            windowAmplitude = trapz(data[onset:offset + 1],dx=1)
+            # Correct samples for starting point when returning
+            onset += startingPoint
+            offset += startingPoint
+            # Average amplitude is based on area
+            if windowType == 2:
+                windowAmplitude /= (offset - onset) + 1
 
             return [windowAmplitude,onset,offset]
 
@@ -369,7 +345,7 @@ try:
                 # Are we extracting time window information?
                 if processing['windowAnalysis']['auto'] and processing['windowAnalysis']['analyse']:
                     # Extract time window
-                    channels[i]['trialData'][j]['window'] = extractWindow(channels[i]['trialData'][j]['data'],baselineTimeIndices,startTimeIndex,processing['windowAnalysis']['sdThreshold'],processing['windowAnalysis']['nThreshold'],processing['windowAnalysis']['analyse'])
+                    channels[i]['trialData'][j]['window'] = extractWindow(channels[i]['trialData'][j]['data'],startTimeIndex,processing['windowAnalysis']['analyse'])
 
     # Query peaks, if requested
     if processing['peakAnalysis']['query'] and processing['peakAnalysis']['analyse']:
@@ -384,13 +360,13 @@ try:
             queryData(channels[i]['header']['title'],channels[i]['trialData'],fileHeader['samplingTickrate'],fileHeader['pretriggerTime'],processing['windowAnalysis']['analyse'])
 finally:
     if filename and fileHeader and channels:
-        if saveMEPFile:
+        if SAVEMEP:
             # Save .mep file
             with open(splitext(filename)[0] + '.mep','wb') as output_file:
                 dump([processing,fileHeader,channels],output_file)
 
         # Write output file, if requested
-        if saveCSVFile:
+        if SAVECSV:
             from csv import writer
             with open(splitext(filename)[0] + '.csv','wb') as output_file:
 
@@ -401,9 +377,9 @@ finally:
 
                 csvWriter = writer(output_file)
                 headerString = ['Channel','Trial',]
-                if processing['peakAnalysis']['analyse'] or processing['peakAnalysis']['query']:
+                if processing['peakAnalysis']['analyse'] and (processing['peakAnalysis']['auto'] or processing['peakAnalysis']['query']):
                     headerString += ['PTP','P1','P2']
-                if processing['windowAnalysis']['analyse'] or processing['windowAnalysis']['query']:
+                if processing['windowAnalysis']['analyse'] and (processing['windowAnalysis']['auto'] or processing['windowAnalysis']['query']):
                     if processing['windowAnalysis']['analyse'] == 1:
                         headerString += ['AUC',]
                     elif processing['windowAnalysis']['analyse'] == 2:
