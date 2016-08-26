@@ -47,7 +47,7 @@ class queryManager(object):
     offsets = {'left':(-30,15),'right':(30,15),'top':(0,15),'bottom':(0,-20)}
     colours = {'user':'red','original':'green','fill':'cyan','plot':'black'}
 
-    def __init__(self,channelName,data,tickrate,pretriggerTime,windowType):
+    def __init__(self,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType):
         self.channelName = channelName
         self.windowType = windowType
         self.tickrate = tickrate
@@ -59,25 +59,24 @@ class queryManager(object):
         self.points = {}
         self.pMarkers = {}
         if windowType:
-            self.points['original'] = [[data[i]['window'][1],data[i]['window'][2]] for i in range(len(data))]
-            self.data = [map(abs,data[i]['data']) for i in range(len(data))]
             self.p1Offset = queryManager.offsets['left']
             self.p2Offset = queryManager.offsets['right']
             self.p1Label = 'Onset'
             self.p2Label = 'Offset'
             self.fill = None
         else:
-            self.points['original'] = [[data[i]['ptp'][1],data[i]['ptp'][2]] for i in range(len(data))]
-            self.data = [copy(data[i]['data']) for i in range(len(data))]
             self.p1Offset = queryManager.offsets['top']
             self.p2Offset = queryManager.offsets['bottom']
             self.p1Label = 'P1'
             self.p2Label = 'P2'
             self.fill = None
-        self.points['user'] = deepcopy(self.points['original'])
+        self.data = [copy(channelData[i]) for i in range(len(channelData))]
+        self.points['original'] = [(mepInfo[i][1],mepInfo[i][2]) for i in range(len(mepInfo))]
+        self.points['user'] = [[mepInfo[i][1],mepInfo[i][2]] for i in range(len(mepInfo))]
         self.axes.set_ylabel(r'$\mu$V')
         self.axes.set_xlabel('time (ms)')
-        self.axes.set_xticks(range(0,len(self.data[0]) + 1,100),[(x * tickrate) - pretriggerTime for x in range(0,len(self.data[0]) + 1,100)])
+        self.axes.set_xticks(range(0,len(self.data[0]) + 1,100))
+        self.axes.set_xticklabels([str((x * tickrate) - pretriggerTime) for x in range(0,len(self.data[0]) + 1,100)])
         self.axes.set_xlim([0, len(self.data[0])])
         self.axes.format_coord = lambda x, y: ''
         self.fig.tight_layout()
@@ -98,7 +97,7 @@ class queryManager(object):
     def updateDisplay(self):
         self.fig.suptitle(self.channelName + ': Trial ' + str(self.currentTrial + 1))
         self.currentPlot.set_ydata(self.data[self.currentTrial])
-        ylim = max(250,max(map(abs,self.data[self.currentTrial]))) * 1.1
+        ylim = max(250,((max(map(abs,self.data[self.currentTrial])) // 100) + 2) * 100)
         if self.windowType:
             self.axes.set_ylim([0,ylim])
         else:
@@ -190,8 +189,9 @@ class queryManager(object):
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-def queryData(channelName,channelData,tickrate,pretriggerTime,windowType = None):
-    myQuery = queryManager(channelName,channelData,tickrate,pretriggerTime,windowType)
+def queryData(channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType = None):
+    # Pass all arguments to queryManager
+    myQuery = queryManager(**locals())
     if windowType:
         for j in range(len(channelData)):
             onset,offset = myQuery.points['user'][j]
@@ -201,7 +201,7 @@ def queryData(channelName,channelData,tickrate,pretriggerTime,windowType = None)
                     windowAmplitude /= (offset - onset) + 1
             else:
                 windowAmplitude = onset = offset = None
-            channelData[j]['window'] = (windowAmplitude,onset,offset)
+            mepInfo[j] = (windowAmplitude,onset,offset)
     else:
         for j in range(len(channelData)):
             p1,p2 = myQuery.points['user'][j]
@@ -209,4 +209,4 @@ def queryData(channelName,channelData,tickrate,pretriggerTime,windowType = None)
                 ptp = myQuery.data[j][p1] - myQuery.data[j][p2]
             else:
                 ptp = p1 = p2 = None
-            channelData[j]['ptp'] = (ptp,p1,p2)
+            mepInfo[j] = (ptp,p1,p2)
