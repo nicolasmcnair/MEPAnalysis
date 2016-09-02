@@ -83,6 +83,7 @@ class queryManager(object):
         self.fig.canvas.manager.window.showMaximized()
         self.fig.canvas.mpl_connect('key_release_event', self.keyRelease)
         self.fig.canvas.mpl_connect('button_press_event', self.mousePress)
+        self.fig.canvas.mpl_connect('scroll_event', self.mouseScroll)
         self.currentPlot, = self.axes.plot(self.data[0],color=queryManager.colours['plot'])
         self.originalMarkers = {}
         self.originalMarkers['p1'] = self.axes.annotate(self.p1Label,color='white',xy=(0,0),xytext=self.p1Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['original'],'shrink':0.05,'frac':1.0}, horizontalalignment='center',visible=False)
@@ -132,6 +133,15 @@ class queryManager(object):
         self.axes.draw_artist(self.userMarkers['p1'])
         self.axes.draw_artist(self.userMarkers['p2'])
         self.axes.draw_artist(self.currentPlot)
+
+    def mouseScroll(self,event):
+            newTrial = max(0,self.currentTrial - 1) if event.step > 0 else min(len(self.data) - 1,self.currentTrial + 1)
+            if newTrial != self.currentTrial:
+                self.currentTrial = newTrial
+                self.updateDisplay()
+                self.fig.canvas.draw()
+                self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
+                self.cursor.update(self.data[newTrial])
 
     def keyRelease(self,event):
         if event.key == 'enter':
