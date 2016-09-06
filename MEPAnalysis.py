@@ -14,6 +14,7 @@ processing['skipNTrials'] = 0                        # Skip this many trials at 
 processing['polarity'] = -1                          # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'linear'                     # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
 processing['timeWindow'] = (-50,100)                 # Beginning and end time (in milliseconds) for output .csv file (set to None to include entire EMG trace)
+processing['matchToBehavioural'] = True              # Set to True to if you want to merge the MEP data with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
 processing['peakAnalysis'] = {}
 processing['peakAnalysis']['analyse'] = 1            # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys (will only occur if 'auto' or 'query' set to True)
 processing['peakAnalysis']['timeWindow'] = (15,50)   # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
@@ -21,7 +22,7 @@ processing['peakAnalysis']['maxPeakInterval'] = 10   # Maximum time allowed betw
 processing['peakAnalysis']['prominence'] = 50        # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
 # Movement onset and offset are determined based on an 'Integrated Profile' of the rectified EMG data (see: Allison G T 2003 Trunk muscle onset detection technique for EMG signals with ECG artefact J. Electromyogr. Kinesiol. 13 209–16)
 processing['windowAnalysis'] = {}
-processing['windowAnalysis']['analyse'] = 1          # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude (will only occur if 'auto' or 'query' set to True)
+processing['windowAnalysis']['analyse'] = 0          # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude (will only occur if 'auto' or 'query' set to True)
 processing['windowAnalysis']['startTime'] = 10       # Beginning time (in milliseconds) to look for MEP onset
 
 ########################################################################################################################################
@@ -34,20 +35,31 @@ SAVECSV = True
 PROMCORRECTION = 0.2
 
 # Get file
-filename = fileHeader = channels = None
+filename = behaviouralFile = fileHeader = channels = subjectInfo = trialInfo = None
 
 Tk().withdraw()
-filename = askopenfilename(filetypes = [('Processed MEP file','*.csv'),('LabChart binary files', '*.adibin')])
+filename = askopenfilename(filetypes = [('Processed Subject Datafile','*.txt'),('Processed MEP file','*.csv'),('LabChart binary files', '*.adibin')])
 if not filename:
     exit()
 
-# Check what kind of file we have
-skipAnalysis = False
-fileType = splitext(filename)[1]
-if fileType == '.adibin':
+# Some helper functions
+def isNumber(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
+def convertTimeToSample(timePoint):
+    return int((timePoint + fileHeader['pretriggerTime']) / fileHeader['samplingTickrate'])
+
+def convertSampleToTime(samplePoint):
+    return (samplePoint * fileHeader['samplingTickrate']) - fileHeader['pretriggerTime']
+
+# Parse Labchart Binary file
+def readAdibinFile(adibinFile):
     # Grab file contents
-    with open(filename,'rb') as labchartFile:
+    with open(adibinFile,'rb') as labchartFile:
         labchartContents = labchartFile.read()
 
     # Read in the file header (using a deque as I'm lazy and it means I don't need to work out offsets as much)
@@ -78,7 +90,7 @@ if fileType == '.adibin':
         print('Incorrect number of trials specified.')
         exit()
     else:
-        samplesPerTrial = int(fileHeader['nSamples'] / processing['totalNTrials'])
+        fileHeader['samplesPerTrial'] = int(fileHeader['nSamples'] / processing['totalNTrials'])
 
     # Read in the channel headers (offset is byte 68; each channel header is 96 bytes)
     channels = {}
@@ -101,50 +113,46 @@ if fileType == '.adibin':
     del labchartContents
 
     # Extract channel data
-    nTrials = processing['totalNTrials'] - processing['skipNTrials']
+    fileHeader['nTrials'] = processing['totalNTrials'] - processing['skipNTrials']
     if processing['detrend']:
         from scipy.signal import detrend
     for i in range(fileHeader['nChannels']):
         channelData = deque([(channels[i]['header']['scale'] * (x + channels[i]['header']['offset'])) * processing['polarity'] for x in labchartData[i + fileHeader['timeChannel']::fileHeader['nChannels'] + fileHeader['timeChannel']]])
         offset = 0
         #Set up channel trial data
-        channels[i]['data'] = [None] * nTrials
-        channels[i]['ptp'] = [None] * nTrials
-        channels[i]['rect'] = [None] * nTrials
-        channels[i]['window'] = [None] * nTrials
+        channels[i]['data'] = [None] * fileHeader['nTrials']
+        channels[i]['ptp'] = [None] * fileHeader['nTrials']
+        channels[i]['rect'] = [None] * fileHeader['nTrials']
+        channels[i]['window'] = [None] * fileHeader['nTrials']
         # Cycle through each trial 
         for j in range(processing['skipNTrials'],processing['totalNTrials']):
             # Detrend data, if requested
             if processing['detrend']:
-                channels[i]['data'][j] = list(detrend([channelData.popleft() for _ in range(samplesPerTrial)],type=processing['detrend']))
+                channels[i]['data'][j] = list(detrend([channelData.popleft() for _ in range(fileHeader['samplesPerTrial'])],type=processing['detrend']))
             else:
-                channels[i]['data'][j] = [channelData.popleft() for _ in range(samplesPerTrial)]
+                channels[i]['data'][j] = [channelData.popleft() for _ in range(fileHeader['samplesPerTrial'])]
             channels[i]['rect'][j] = map(abs,channels[i]['data'][j])
             channels[i]['ptp'][j] = [None,None,None]
             channels[i]['window'][j] = [None,None,None]
 
     del labchartData, channelData
-elif fileType == '.csv':
-    skipAnalysis = True
+
+    return (fileHeader,channels)
+
+# Parse csv mep file
+def readMEPFile(mepFile):
     from csv import reader
     # Grab csv header
     with open(filename,'rb') as csvFile:
         csvReader = reader(csvFile)
         headerLine = csvReader.next()
-        # Small helper function
-        def isNumber(s):
-            try:
-                float(s)
-                return True
-            except ValueError:
-                return False
-        # Get start time (this assumes first number in headerline is onset time)
+        # Get start time (this assumes first number in headerline is onset time, which it should be if it's a csv file written by Analyser)
         fileHeader = {}
         timeIndex,fileHeader['pretriggerTime'] = next((x,float(y) * -1) for x,y in enumerate(headerLine) if isNumber(y))
         # Work out number of samples
-        samplesPerTrial = len(headerLine) - timeIndex
+        fileHeader['samplesPerTrial'] = len(headerLine) - timeIndex
         # Work out sampling rate
-        fileHeader['samplingTickrate'] = (float(headerLine[-1]) - float(headerLine[timeIndex])) / (samplesPerTrial - 1)
+        fileHeader['samplingTickrate'] = (float(headerLine[-1]) - float(headerLine[timeIndex])) / (fileHeader['samplesPerTrial'] - 1)
         # Get PTP index, if present
         processing['peakAnalysis'] = {}
         ptpIndex = headerLine.index('PTP') if 'PTP' in headerLine else None
@@ -187,26 +195,134 @@ elif fileType == '.csv':
                         channels[channelIndex]['window'].append([None,None,None])
                 channels[channelIndex]['data'].append([float(x) for x in row[timeIndex:]])
                 channels[channelIndex]['rect'].append(map(abs,channels[channelIndex]['data'][-1]))
+    return (fileHeader,channels)
+
+# Parse tab-delimited behavioural file
+def readDataFile(dataFile,mepData = False):
+    with open(dataFile,'r') as textFile:
+        dataFileContents = textFile.readlines()
+
+    dataFileContents = [x.rstrip() for x in dataFileContents]
+    trialInfoIndex = dataFileContents.index('')
+    subjectInfo = dataFileContents[:trialInfoIndex]
+    trialInfo = dataFileContents[trialInfoIndex + 1:]
+    del dataFileContents
+    # Check if textfile contains MEP data, if so strip it out
+    if mepData:
+        headerLine = trialInfo[0].split('\t')
+        headerLength = len(headerLine)
+        fileHeader = {}
+        # Get PTP index, if present        
+        processing['peakAnalysis'] = {}
+        ptpIndex = headerLine.index('PTP') if 'PTP' in headerLine else None
+        processing['peakAnalysis']['analyse'] = 1 if ptpIndex else 0
+        # Get Time Window index, if present
+        processing['windowAnalysis'] = {}
+        if [x for x in headerLine if x in {'AUC','Mean'}]:
+            windowIndex = next(x for x,y in enumerate(headerLine) if y in {'AUC','Mean'})
+            processing['windowAnalysis']['analyse'] = 1 if headerLine[windowIndex] == 'AUC' else 2
+        else:
+            windowIndex = None
+            processing['windowAnalysis']['analyse'] = 0
+        # Get start time (this is done after getting PTP and Time Window indices, since a behavioural datafile may have other numbers in the header line)
+        timeIndex,fileHeader['pretriggerTime'] = next((x,float(y) * -1) for x,y in enumerate(headerLine) if isNumber(y) and x >= (windowIndex or ptpIndex or 0))
+        # Work out number of samples
+        fileHeader['samplesPerTrial'] = headerLength - timeIndex
+        # Work out sampling rate
+        fileHeader['samplingTickrate'] = (float(headerLine[-1]) - float(headerLine[timeIndex])) / (fileHeader['samplesPerTrial'] - 1)
+        # Start reading in data
+        channelIndex = headerLine.index('Channel') if 'Channel' in headerLine else None
+        channels = {}
+        currentChannel = ''
+        # Do we have more than 1 channel?
+        if channelIndex:
+            fileHeader['nChannels'] = 0
+            channelIndex = -1
+        else:
+            fileHeader['nChannels'] = 1
+            channelIndex = 0
+            channels[0] = {'header':{},'data':{}}
+            channels[0]['header']['title'] = ''
+            channels[0]['data'] = []
+            channels[0]['ptp'] = []
+            channels[0]['rect'] = []
+            channels[0]['window'] = []
+        del headerLine[(ptpIndex or windowIndex):]
+        trialInfo[0] = '\t'.join(headerLine)
+        # Cycle through each trial
+        for i in range(1,len(trialInfo)):
+            # Pass MEP data to channels
+            tmp = trialInfo[i].split('\t')
+            if len(tmp) == headerLength:
+                if channelIndex and currentChannel != trialInfo[i][channelIndex]:
+                    currentChannel = tmp[channelIndex]
+                    channelIndex += 1
+                    fileHeader['nChannels'] += 1
+                    channels[channelIndex] = {'header':{},'data':{}}
+                    channels[channelIndex]['header']['title'] = currentChannel
+                    channels[channelIndex]['data'] = []
+                    channels[channelIndex]['ptp'] = []
+                    channels[channelIndex]['rect'] = []
+                    channels[channelIndex]['window'] = []
+            
+                if ptpIndex:
+                    if isNumber(tmp[ptpIndex]):
+                        channels[channelIndex]['ptp'].append([float(tmp[ptpIndex])] + [int((float(x) + fileHeader['pretriggerTime']) / fileHeader['samplingTickrate']) for x in tmp[ptpIndex + 1:ptpIndex + 3]])
+                    else:
+                        channels[channelIndex]['ptp'].append([None,None,None])
+                if windowIndex:
+                    if isNumber(tmp[windowIndex]):
+                        channels[channelIndex]['window'].append([float(tmp[windowIndex])] + [int((float(x) + fileHeader['pretriggerTime']) / fileHeader['samplingTickrate']) for x in tmp[windowIndex + 1:windowIndex + 3]])
+                    else:
+                        channels[channelIndex]['window'].append([None,None,None])
+                channels[channelIndex]['data'].append([float(x) for x in tmp[timeIndex:]])
+                channels[channelIndex]['rect'].append(map(abs,channels[channelIndex]['data'][-1]))
+            # Strip MEP data from trial data
+            del tmp[(ptpIndex or windowIndex):]
+            trialInfo[i] = '\t'.join(tmp)
+
+        return (subjectInfo,trialInfo,fileHeader,channels)
+    else:
+        return (subjectInfo,trialInfo)
+
+# Check what kind of file we have
+doAnalysis = False
+fileType = splitext(filename)[1]
+if fileType == '.adibin':
+    doAnalysis = True
+    # Are we matching this with a behavioural datafile?
+    if processing['matchToBehavioural']:
+        behaviouralFile = askopenfilename(filetypes = [('Behavioural Datafile','*.txt')])
+        if not behaviouralFile:
+            exit()
+        subjectInfo, trialInfo = readDataFile(behaviouralFile)
+
+    # Read adibin file
+    fileHeader, channels = readAdibinFile(filename)
+    if processing['matchToBehavioural'] and (fileHeader['nTrials'] != (len(trialInfo) - 1)):
+        print('Trial numbers do not match between Labchart file (' + str(fileHeader['nTrials']) + ') and Behavioural data file (' + str(len(trialInfo) - 1) + ').')
+        exit()
+
+elif fileType == '.csv':
+    # Read csv file
+    fileHeader, channels = readMEPFile(filename)
+
+elif fileType == '.txt':
+    # Read txt file
+    subjectInfo, trialInfo, fileHeader, channels = readDataFile(filename,True)
 
 else:
     print('Unrecognised file type.')
     exit()
-     
-# Some helper functions
-def convertTimeToSample(timePoint):
-    return int((timePoint + fileHeader['pretriggerTime']) / fileHeader['samplingTickrate'])
-
-def convertSampleToTime(samplePoint):
-    return (samplePoint * fileHeader['samplingTickrate']) - fileHeader['pretriggerTime']
 
 # Do automated peak and/or time window analysis
-if not skipAnalysis:
+if doAnalysis:
 
     # Convert time variables from milliseconds to samples
     if processing['peakAnalysis']['timeWindow']:
         peakTimeIndices = [convertTimeToSample(x) for x in processing['peakAnalysis']['timeWindow']]
     else:
-        peakTimeIndices = [convertTimeToSample(0), samplesPerTrial]
+        peakTimeIndices = [convertTimeToSample(0), fileHeader['samplesPerTrial']]
 
     def getPeakProminence(data,peak,p,v):
         """Get prominence of current peak"""
@@ -367,7 +483,7 @@ if not skipAnalysis:
                 if processing['peakAnalysis']['maxPeakInterval']:
                     peakBoundary = (processing['peakAnalysis']['maxPeakInterval'] / fileHeader['samplingTickrate']) + p1
                 else:
-                    peakBoundary = samplesPerTrial
+                    peakBoundary = fileHeader['samplesPerTrial']
                 VALLEYS = [x for x in VALLEYS if peakBoundary >= x[0] > p1] or [x for x in VALLEYS if x[0] > p1]
                 if VALLEYS:
                     # Sort by relevant attribute                
@@ -408,37 +524,73 @@ if processing['windowAnalysis']['analyse']:
 if channels:
     # Write output file, if requested (only ever False for debugging)
     if SAVECSV:
-        with open(splitext(filename)[0] + '.csv','wb') as output_file:
+        # Get samples for output times
+        if processing['timeWindow']:
+            timeIndices = [convertTimeToSample(x) for x in processing['timeWindow']]
+        else:
+            timeIndices = [0, fileHeader['samplesPerTrial']]
 
-            if processing['timeWindow']:
-                timeIndices = [convertTimeToSample(x) for x in processing['timeWindow']]
-            else:
-                timeIndices = [0, samplesPerTrial]
+        # Get MEP header line
+        headerString = []
+        if fileHeader['nChannels'] > 1:
+            headerString += ['Channel',]
+        if not processing['matchToBehavioural']:
+            headerString += ['Trial',]
+        if processing['peakAnalysis']['analyse']:
+            headerString += ['PTP','P1','P2']
+        if processing['windowAnalysis']['analyse']:
+            if processing['windowAnalysis']['analyse'] == 1:
+                headerString += ['AUC',]
+            elif processing['windowAnalysis']['analyse'] == 2:
+                headerString += ['Average',]
+            headerString += ['Onset','Offset']
+        headerString += [str(convertSampleToTime(x)) for x in range(*timeIndices)]
 
-            csvWriter = writer(output_file)
-            headerString = ['Channel','Trial',]
-            if processing['peakAnalysis']['analyse']:
-                headerString += ['PTP','P1','P2']
-            if processing['windowAnalysis']['analyse']:
-                if processing['windowAnalysis']['analyse'] == 1:
-                    headerString += ['AUC',]
-                elif processing['windowAnalysis']['analyse'] == 2:
-                    headerString += ['Average',]
-                headerString += ['Onset','Offset']
-            # Write header 
-            csvWriter.writerow(headerString + [str(convertSampleToTime(x)) for x in range(*timeIndices)])    
-
-            for i in range(fileHeader['nChannels']):
-                for j in range(len(channels[i]['data'])):
-                    trialString = [channels[i]['header']['title'],j + 1,]
-                    if processing['peakAnalysis']['analyse']:
-                        if channels[i]['ptp'][j][0]:
-                            trialString += [channels[i]['ptp'][j][0],] + [convertSampleToTime(x) for x in channels[i]['ptp'][j][1:]]
+        # Check if writing behavioural file or MEP file
+        if processing['matchToBehavioural']:
+            with open(splitext(filename)[0] + '_MEP.txt','w') as outputFile:
+                # Write subject info
+                for row in subjectInfo:
+                    outputFile.write(row + '\n')
+                outputFile.write('\n')
+                # Write header line
+                outputFile.write(trialInfo[0] + '\t' + '\t'.join(headerString) + '\n')
+                # Write MEP data
+                for i in range(fileHeader['nChannels']):
+                    for j,row in enumerate(trialInfo[1:]):
+                        if fileHeader['nChannels'] > 1:
+                            trialString = [channels[i]['header']['title'],]
                         else:
-                            trialString += ['','','']
-                    if processing['windowAnalysis']['analyse']:
-                        if channels[i]['window'][j][0]:
-                            trialString += [channels[i]['window'][j][0],] + [convertSampleToTime(x) for x in channels[i]['window'][j][1:]]
-                        else:
-                            trialString += ['','','']
-                    csvWriter.writerow(trialString + [channels[i]['data'][j][x] for x in range(*timeIndices)])
+                            trialString = []
+                        if processing['peakAnalysis']['analyse']:
+                            if channels[i]['ptp'][j][0]:
+                                trialString += [str(channels[i]['ptp'][j][0])] + [str(convertSampleToTime(x)) for x in channels[i]['ptp'][j][1:]]
+                            else:
+                                trialString += ['','','']
+                        if processing['windowAnalysis']['analyse']:
+                            if channels[i]['window'][j][0]:
+                                trialString += [str(channels[i]['window'][j][0])] + [str(convertSampleToTime(x)) for x in channels[i]['window'][j][1:]]
+                            else:
+                                trialString += ['','','']
+                        outputFile.write(row + '\t' + '\t'.join(trialString[:] + [str(channels[i]['data'][j][x]) for x in range(*timeIndices)]) + '\n')
+
+        else:
+            with open(splitext(filename)[0] + '_MEP.csv','wb') as outputFile:
+                csvWriter = writer(outputFile)
+                # Write header 
+                csvWriter.writerow(headerString)    
+                # Write MEP data
+                for i in range(fileHeader['nChannels']):
+                    for j in range(len(channels[i]['data'])):
+                        trialString = [channels[i]['header']['title'],j + 1,]
+                        if processing['peakAnalysis']['analyse']:
+                            if channels[i]['ptp'][j][0]:
+                                trialString += [channels[i]['ptp'][j][0],] + [convertSampleToTime(x) for x in channels[i]['ptp'][j][1:]]
+                            else:
+                                trialString += ['','','']
+                        if processing['windowAnalysis']['analyse']:
+                            if channels[i]['window'][j][0]:
+                                trialString += [channels[i]['window'][j][0],] + [convertSampleToTime(x) for x in channels[i]['window'][j][1:]]
+                            else:
+                                trialString += ['','','']
+                        csvWriter.writerow(trialString + [channels[i]['data'][j][x] for x in range(*timeIndices)])
