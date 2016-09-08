@@ -3,18 +3,18 @@ from Tkinter import Tk
 from tkFileDialog import askopenfilename
 from os.path import splitext
 from sys import exit
-from numpy import trapz, interp
+from numpy import trapz, interp, mean
 from operator import itemgetter
 from csv import writer
 
 # User-Defined Variables
 processing = {}
-processing['totalNTrials'] = 198                     # Total number of trials; this must evenly divide with the number of samples
+processing['totalNTrials'] = 164                     # Total number of trials; this must evenly divide with the number of samples
 processing['skipNTrials'] = 0                        # Skip this many trials at the beginning of the file
 processing['polarity'] = -1                          # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'linear'                     # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
 processing['timeWindow'] = (-50,100)                 # Beginning and end time (in milliseconds) for output .csv file (set to None to include entire EMG trace)
-processing['matchToBehavioural'] = True              # Set to True to if you want to merge the MEP data with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
+processing['matchToBehavioural'] = False             # Set to True to if you want to merge the MEP data with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
 processing['peakAnalysis'] = {}
 processing['peakAnalysis']['analyse'] = 1            # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys (will only occur if 'auto' or 'query' set to True)
 processing['peakAnalysis']['timeWindow'] = (15,50)   # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
@@ -22,7 +22,7 @@ processing['peakAnalysis']['maxPeakInterval'] = 10   # Maximum time allowed betw
 processing['peakAnalysis']['prominence'] = 50        # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
 # Movement onset and offset are determined based on an 'Integrated Profile' of the rectified EMG data (see: Allison G T 2003 Trunk muscle onset detection technique for EMG signals with ECG artefact J. Electromyogr. Kinesiol. 13 209–16)
 processing['windowAnalysis'] = {}
-processing['windowAnalysis']['analyse'] = 0          # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude (will only occur if 'auto' or 'query' set to True)
+processing['windowAnalysis']['analyse'] = 1          # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude (will only occur if 'auto' or 'query' set to True)
 processing['windowAnalysis']['startTime'] = 10       # Beginning time (in milliseconds) to look for MEP onset
 
 ########################################################################################################################################
@@ -33,6 +33,7 @@ processing['windowAnalysis']['startTime'] = 10       # Beginning time (in millis
 
 SAVECSV = True
 PROMCORRECTION = 0.2
+COMPUTEAVERAGE = True
 
 # Get file
 filename = behaviouralFile = fileHeader = channels = subjectInfo = trialInfo = None
@@ -113,7 +114,7 @@ def readAdibinFile(adibinFile):
     del labchartContents
 
     # Extract channel data
-    fileHeader['nTrials'] = processing['totalNTrials'] - processing['skipNTrials']
+    fileHeader['nTrials'] = (processing['totalNTrials'] - processing['skipNTrials'])
     if processing['detrend']:
         from scipy.signal import detrend
     for i in range(fileHeader['nChannels']):
@@ -134,6 +135,16 @@ def readAdibinFile(adibinFile):
             channels[i]['rect'][j] = map(abs,channels[i]['data'][j])
             channels[i]['ptp'][j] = [None,None,None]
             channels[i]['window'][j] = [None,None,None]
+
+        if COMPUTEAVERAGE:
+            temp = mean([x for x in channels[i]['data']],0)
+            if processing['detrend']:
+                channels[i]['data'].append(list(detrend(temp)))
+            else:
+                channels[i]['data'].append(list(temp))
+            channels[i]['rect'].append(map(abs,channels[i]['data'][-1]))
+            channels[i]['ptp'].append(None)
+            channels[i]['window'].append(None)
 
     del labchartData, channelData
 
@@ -512,13 +523,13 @@ if doAnalysis:
 if processing['peakAnalysis']['analyse']:
     from QueryMEP import queryData
     for i in range(fileHeader['nChannels']):        
-        queryData(channels[i]['header']['title'],channels[i]['data'],channels[i]['ptp'],fileHeader['samplingTickrate'],fileHeader['pretriggerTime'])
+        queryData(filename,channels[i]['header']['title'],channels[i]['data'],channels[i]['ptp'],fileHeader['samplingTickrate'],fileHeader['pretriggerTime'])
 
 # Query time windows, if analysing
 if processing['windowAnalysis']['analyse']:
     from QueryMEP import queryData
     for i in range(fileHeader['nChannels']):       
-        queryData(channels[i]['header']['title'],channels[i]['rect'],channels[i]['window'],fileHeader['samplingTickrate'],fileHeader['pretriggerTime'],processing['windowAnalysis']['analyse'])
+        queryData(filename,channels[i]['header']['title'],channels[i]['rect'],channels[i]['window'],fileHeader['samplingTickrate'],fileHeader['pretriggerTime'],processing['windowAnalysis']['analyse'])
 
 # Do we at least have any channel data loaded?
 if channels:
@@ -532,7 +543,7 @@ if channels:
 
         # Get MEP header line
         headerString = []
-        if fileHeader['nChannels'] > 1:
+        if not processing['matchToBehavioural'] or (fileHeader['nChannels'] > 1):
             headerString += ['Channel',]
         if not processing['matchToBehavioural']:
             headerString += ['Trial',]

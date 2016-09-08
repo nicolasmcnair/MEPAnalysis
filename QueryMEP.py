@@ -47,14 +47,15 @@ class queryManager(object):
     offsets = {'left':(-30,15),'right':(30,15),'top':(0,15),'bottom':(0,-20)}
     colours = {'user':'red','original':'green','fill':'cyan','plot':'black'}
 
-    def __init__(self,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType):
+    def __init__(self,filename,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType):
         self.channelName = channelName
         self.windowType = windowType
         self.tickrate = tickrate
         self.pretriggerTime = pretriggerTime    
         self.currentTrial = 0
         self.currentPlot = None
-        self.fig = plt.figure()        
+        self.fig = plt.figure()
+        self.fig.canvas.set_window_title(filename)      
         self.axes = self.fig.add_subplot(1,1,1)
         self.points = {}
         self.pMarkers = {}
@@ -152,8 +153,8 @@ class queryManager(object):
             self.userMarkers['p2'].set_visible(False)
             self.axes.draw_artist(self.userMarkers['p1'])
             self.axes.draw_artist(self.userMarkers['p2'])
-            self.points['user'][self.currentTrial] = (None,None)
-            if self.windowType:
+            self.points['user'][self.currentTrial] = [None,None]
+            if self.windowType and self.fill:
                 self.fill.remove()
                 del self.fill
                 self.fill = None
@@ -199,7 +200,7 @@ class queryManager(object):
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-def queryData(channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType = None):
+def queryData(filename,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType = None):
     # Pass all arguments to queryManager
     myQuery = queryManager(**locals())
     if windowType:
