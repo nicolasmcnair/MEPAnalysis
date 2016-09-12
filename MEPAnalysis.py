@@ -9,7 +9,7 @@ from csv import writer
 
 # User-Defined Variables
 processing = {}
-processing['totalNTrials'] = 164                     # Total number of trials; this must evenly divide with the number of samples
+processing['totalNTrials'] = 198                     # Total number of trials; this must evenly divide with the number of samples
 processing['skipNTrials'] = 0                        # Skip this many trials at the beginning of the file
 processing['polarity'] = -1                          # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'linear'                     # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
@@ -39,7 +39,7 @@ COMPUTEAVERAGE = True
 filename = behaviouralFile = fileHeader = channels = subjectInfo = trialInfo = None
 
 Tk().withdraw()
-filename = askopenfilename(filetypes = [('Processed Subject Datafile','*.txt'),('Processed MEP file','*.csv'),('LabChart binary files', '*.adibin')])
+filename = askopenfilename(filetypes = [('LabChart binary files', '*.adibin'),('Processed MEP file','*.csv'),('Processed Subject Datafile','*.txt')])
 if not filename:
     exit()
 
@@ -66,10 +66,10 @@ def readAdibinFile(adibinFile):
     # Read in the file header (using a deque as I'm lazy and it means I don't need to work out offsets as much)
     from collections import deque
     from struct import unpack,unpack_from
-    labchartHeader = deque(unpack_from("<4cld5l2d4l",labchartContents,0))
+    labchartHeader = deque(unpack_from("<4sld5l2d4l",labchartContents,0))
 
     # On valid LabChart binary files the first four bytes spell "CFWB"
-    if ''.join([labchartHeader.popleft() for _ in range(4)]) != 'CFWB':
+    if labchartHeader.popleft() != 'CFWB':
         print('Incorrect file format.')
         exit()
 
