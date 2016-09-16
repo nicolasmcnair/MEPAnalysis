@@ -49,9 +49,9 @@ class queryManager(object):
 
     text_offsets = {'left':(-30,15),'right':(30,15),'top':(0,18),'bottom':(0,-27)}
     arrow_lengths = {'left':15,'right':15,'top':15,'bottom':15}
-    colours = {'user':'red','original':'green','fill':'cyan','plot':'black'}
+    colours = {'user':'red','original':'green','fill':'cyan','goodPlot':'black','badPlot':'red'}
 
-    def __init__(self,filename,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType):
+    def __init__(self,filename,channelName,channelData,mepInfo,baselineInfo,tickrate,pretriggerTime,windowType):
         self.channelName = channelName
         self.windowType = windowType
         self.tickrate = tickrate
@@ -81,6 +81,7 @@ class queryManager(object):
             self.p2Label = 'P2'
             self.fill = None
         self.data = [copy(channelData[i]) for i in range(len(channelData))]
+        self.baselineInfo = baselineInfo
         self.points['original'] = [(mepInfo[i][1],mepInfo[i][2]) for i in range(len(mepInfo))]
         self.points['user'] = [[mepInfo[i][1],mepInfo[i][2]] for i in range(len(mepInfo))]
         self.axes.set_ylabel(r'$\mu$V')
@@ -95,7 +96,7 @@ class queryManager(object):
         self.fig.canvas.mpl_connect('key_release_event', self.keyRelease)
         self.fig.canvas.mpl_connect('button_press_event', self.mousePress)
         self.fig.canvas.mpl_connect('scroll_event', self.mouseScroll)
-        self.currentPlot, = self.axes.plot(self.data[0],color=queryManager.colours['plot'])
+        self.currentPlot, = self.axes.plot(self.data[0],color=queryManager.colours['goodPlot'])
         self.originalMarkers = {}
         self.originalMarkers['p1'] = self.axes.annotate(self.p1Label,color='white',xy=(0,0),xytext=self.p1Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['original'],'shrink':0.05,'headlength':self.p1ArrowLength}, horizontalalignment='center',visible=False)
         self.originalMarkers['p2'] = self.axes.annotate(self.p2Label,color='white',xy=(0,0),xytext=self.p2Offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['original'],'shrink':0.05,'headlength':self.p2ArrowLength}, horizontalalignment='center',visible=False)
@@ -109,6 +110,10 @@ class queryManager(object):
     def updateDisplay(self):
         self.fig.suptitle(self.channelName + ': Trial ' + str(self.currentTrial + 1))
         self.currentPlot.set_ydata(self.data[self.currentTrial])
+        if self.baselineInfo[self.currentTrial]:
+            self.currentPlot.set_c(queryManager.colours['badPlot'])
+        else:
+            self.currentPlot.set_c(queryManager.colours['goodPlot'])
         self.cursor.dot.visible=False
         self.cursor.annotation.visible=False
         ylim = max(250,((max(map(abs,self.data[self.currentTrial])) // 100) + 2) * 100)
@@ -161,7 +166,17 @@ class queryManager(object):
         if event.key == 'enter':
             if askokcancel('Accept?','Accept all trials?'):
                 plt.close()
-        elif event.key in {'delete','backspace'}:
+        elif event.key == 'backspace':
+            if self.baselineInfo[self.currentTrial]:
+                self.currentPlot.set_c(queryManager.colours['goodPlot'])
+                self.baselineInfo[self.currentTrial] = False
+            else:
+                self.currentPlot.set_c(queryManager.colours['badPlot'])
+                self.baselineInfo[self.currentTrial] = True
+            self.fig.canvas.draw()
+            self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
+
+        elif event.key == 'delete':
             self.userMarkers['p1'].set_visible(False)
             self.userMarkers['p2'].set_visible(False)
             self.axes.draw_artist(self.userMarkers['p1'])
@@ -213,7 +228,7 @@ class queryManager(object):
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-def queryData(filename,channelName,channelData,mepInfo,tickrate,pretriggerTime,windowType = None):
+def queryData(filename,channelName,channelData,mepInfo,baselineInfo,tickrate,pretriggerTime,windowType = None):
     # Pass all arguments to queryManager
     myQuery = queryManager(**locals())
     if windowType:
