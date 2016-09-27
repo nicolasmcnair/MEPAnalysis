@@ -26,7 +26,6 @@ processing['peakAnalysis']['analyse'] = 1              # Peak analysis: 0 = No, 
 processing['peakAnalysis']['timeWindow'] = (15,50)     # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
 processing['peakAnalysis']['maxPeakInterval'] = 10     # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without set limit (set to None to ignore)
 processing['peakAnalysis']['prominence'] = 50          # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
-# Movement onset and offset are determined based on an 'Integrated Profile' of the rectified EMG data (see: Allison G T 2003 Trunk muscle onset detection technique for EMG signals with ECG artefact J. Electromyogr. Kinesiol. 13 209–16)
 processing['windowAnalysis'] = {}
 processing['windowAnalysis']['analyse'] = 1            # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude
 processing['windowAnalysis']['timeWindow'] = (10,None) # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset; set second value to None to look from specified time to end of trial)
