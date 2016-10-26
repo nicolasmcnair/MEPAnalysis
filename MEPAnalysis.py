@@ -9,25 +9,26 @@ from csv import writer
 
 # User-Defined Variables
 processing = {}
-processing['totalNTrials'] = 198                       # Total number of trials; this must evenly divide with the number of samples
+processing['totalNTrials'] = 209                       # Total number of trials; this must evenly divide with the number of samples
 processing['skipNTrials'] = 0                          # Skip this many trials at the beginning of the file
 processing['polarity'] = -1                            # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'linear'                       # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
-processing['timeWindow'] = (-50,100)                   # Beginning and end time (in milliseconds) for output .csv/.txt file (set to None to include entire EMG trace)
-processing['matchToBehavioural'] = False               # Set to True to if you want to merge MEP data from a LabChart .adibin file with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
+processing['timeWindow'] = None#(-50,100)                   # Beginning and end time (in milliseconds) for output .csv/.txt file (set to None to include entire EMG trace)
+processing['matchToBehavioural'] = False                # Set to True to if you want to merge MEP data from a LabChart .adibin file with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
 processing['baseline'] = {}
-processing['baseline']['detection'] = 3                # Type of baseline movement detection; 0 = No detection; 1 = RMS amplitude; 2 = peak-to-peak; 3 = both RMS and peak-to-peak
+processing['baseline']['detection'] = 0                # Type of baseline movement detection; 0 = No detection; 1 = RMS amplitude; 2 = peak-to-peak; 3 = both RMS and peak-to-peak
 processing['baseline']['timeWindow'] = (-55,-5)        # Beginning and end time (in milliseconds) to look for baseline movement (set to None to look at entire EMG prior to trigger onset)
 processing['baseline']['RMS'] = 5                      # Threshold for RMS movement detection (in microVolts)
 processing['baseline']['PTP'] = 25                     # Threshold for peak-to-peak movement detection (in microVolts)
 processing['baseline']['prominence'] = 10              # Minimum peak prominence (in microVolts) to qualify as a potential peak (will iterate down 20% if no peaks/valleys are found)
 processing['peakAnalysis'] = {}
-processing['peakAnalysis']['analyse'] = 1              # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys
+processing['peakAnalysis']['analyse'] = 0#1              # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys
 processing['peakAnalysis']['timeWindow'] = (15,50)     # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
 processing['peakAnalysis']['maxPeakInterval'] = 10     # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without set limit (set to None to ignore)
 processing['peakAnalysis']['prominence'] = 50          # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
+
 processing['windowAnalysis'] = {}
-processing['windowAnalysis']['analyse'] = 1            # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude
+processing['windowAnalysis']['analyse'] = 0            # Time window analysis: 0 = No, 1 = Area under curve, 2 = Average amplitude, 3 = RMS
 processing['windowAnalysis']['timeWindow'] = (10,None) # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset; set second value to None to look from specified time to end of trial)
 
 ########################################################################################################################################
@@ -323,7 +324,7 @@ def readDataFile(dataFile,mepData = False):
 doAnalysis = False
 fileType = splitext(filename)[1]
 if fileType == '.adibin':
-    doAnalysis = True
+    doAnalysis = bool(processing['peakAnalysis']['analyse'] or processing['windowAnalysis']['analyse'])
     # Are we matching this with a behavioural datafile?
     if processing['matchToBehavioural']:
         behaviouralFile = askopenfilename(filetypes = [('Behavioural Datafile','*.txt')])
@@ -470,20 +471,16 @@ if doAnalysis:
                 prominenceCriterion -= (prominence * PROMCORRECTION)
         return [outPeaks,outValleys]
 
-    def extractWindow(data,timeWindow,peakInfo,windowType):
+    def extractWindow(data,timeWindow,peakInfo,windowType,search=True,detrendSignal=False):
         #Set up return values
         windowAmplitude = onset = offset = None
         # Get subsample of data
         sampData = data[timeWindow[0]:timeWindow[1]]
-        # If peakInfo is -1, then we just want the RMS for the timeWindow we've given
-        if peakInfo == -1:
+        if detrendSignal:
             from scipy.signal import detrend
-            onset,offset = timeWindow
-            # Get rms amplitude
-            windowAmplitude = sqrt(mean([x**2 for x in detrend(sampData)]))
-            
-        # Otherwise we're going hunting
-        else:
+            sampData = detrend(sampData)
+        # Are we searching for onset/offset times
+        if search:
             # Calculate cumulative signal
             cumSignal = [sum(sampData[:x + 1]) for x in range(len(sampData))]
             # Calculate reference line
@@ -496,17 +493,23 @@ if doAnalysis:
                 onset = max(enumerate(integProf), key=itemgetter(1))[0]
                 # Min difference (after onset) is MEP offset
                 offset = min(enumerate(integProf[onset:]), key=itemgetter(1))[0] + onset
-                # Get window amplitude
-                if windowType == 2:
-                    windowAmplitude = mean(sampData)
-                else:
-                    windowAmplitude = trapz(sampData[onset:offset + 1],dx=1)
-                # Correct samples for starting point when returning
-                onset += timeWindow[0]
-                offset += timeWindow[0]
-                # If movement onset/offset don't bound identified peaks, can't trust them
-                if not peakInfo[0] or onset >= peakInfo[1] and offset <= peakInfo[2]:
-                    windowAmplitude = onset = offset = None
+        else:
+            onset,offset = timeWindow
+        if onset:
+            if windowType == 3:
+                # Get rms amplitude
+                windowAmplitude = sqrt(mean([x**2 for x in sampData]))
+            elif windowType == 2:
+                windowAmplitude = mean(sampData)
+            else:
+                windowAmplitude = trapz(sampData[onset:offset + 1],dx=1)
+                    
+            # Correct samples for starting point when returning
+            onset += timeWindow[0]
+            offset += timeWindow[0]
+            # If movement onset/offset don't bound identified peaks, can't trust them
+            if search and (not peakInfo[0] or (onset >= peakInfo[1] and offset <= peakInfo[2])):
+                windowAmplitude = onset = offset = None
 
         return [windowAmplitude,onset,offset]
 
@@ -582,7 +585,7 @@ if doAnalysis:
 
             # Are we detecting baseline activity based on RMS?
             if (processing['baseline']['detection'] & 1) and not channels[i]['baseline'][j]:
-                channels[i]['baseline'][j] = extractWindow(channels[i]['rect'][j],baselineTimeIndices,-1,2)[0] > processing['baseline']['RMS']
+                channels[i]['baseline'][j] = extractWindow(channels[i]['rect'][j],baselineTimeIndices,None,3,False,True)[0] > processing['baseline']['RMS']
 
             # Are we extracting time window information?
             if processing['windowAnalysis']['analyse']:
@@ -607,7 +610,7 @@ if channels:
     # Write output file, if requested (only ever False for debugging)
     if SAVECSV:
         # Check if baseline movement detection has been made outside of automatic detection
-        if processing['baseline']['detection'] or any(channels[i]['baseline']):
+        if processing['baseline']['detection'] or any([any(channels[x]['baseline']) for x in channels]):
             PRINTBASELINE = True
         else:
             PRINTBASELINE = False
@@ -638,7 +641,7 @@ if channels:
 
         # Check if writing behavioural file or MEP file
         if processing['matchToBehavioural']:
-            with open(filename,'w') as outputFile:
+            with open(splitext(behaviouralFile)[0] + '_MEP.txt','w') as outputFile:
                 # Write subject info
                 for row in subjectInfo:
                     outputFile.write(row + '\n')
