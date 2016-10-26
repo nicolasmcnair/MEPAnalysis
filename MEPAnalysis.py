@@ -9,11 +9,11 @@ from csv import writer
 
 # User-Defined Variables
 processing = {}
-processing['totalNTrials'] = 209                       # Total number of trials; this must evenly divide with the number of samples
+processing['totalNTrials'] = 205                       # Total number of trials; this must evenly divide with the number of samples
 processing['skipNTrials'] = 0                          # Skip this many trials at the beginning of the file
 processing['polarity'] = -1                            # 1 = Postive-Negative MEP deflection; -1 = Negative-Positive MEP deflection
 processing['detrend'] = 'linear'                       # Detrend EMG data; allowable values are 'linear' (least-squares regression), 'constant' (mean), or None
-processing['timeWindow'] = None#(-50,100)                   # Beginning and end time (in milliseconds) for output .csv/.txt file (set to None to include entire EMG trace)
+processing['timeWindow'] = (-50,100)                   # Beginning and end time (in milliseconds) for output .csv/.txt file (set to None to include entire EMG trace)
 processing['matchToBehavioural'] = False                # Set to True to if you want to merge MEP data from a LabChart .adibin file with a tab-delimited behavioural data file; False otherwise (N.B. Empty line is used to signify beginning of trial data)
 processing['baseline'] = {}
 processing['baseline']['detection'] = 0                # Type of baseline movement detection; 0 = No detection; 1 = RMS amplitude; 2 = peak-to-peak; 3 = both RMS and peak-to-peak
@@ -22,7 +22,7 @@ processing['baseline']['RMS'] = 5                      # Threshold for RMS movem
 processing['baseline']['PTP'] = 25                     # Threshold for peak-to-peak movement detection (in microVolts)
 processing['baseline']['prominence'] = 10              # Minimum peak prominence (in microVolts) to qualify as a potential peak (will iterate down 20% if no peaks/valleys are found)
 processing['peakAnalysis'] = {}
-processing['peakAnalysis']['analyse'] = 0#1              # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys
+processing['peakAnalysis']['analyse'] = 1              # Peak analysis: 0 = No, 1 = Max Height, 2 = Max Prominence, 3 = First identifiable peak, plus most prominent of subequent two valleys
 processing['peakAnalysis']['timeWindow'] = (15,50)     # Beginning and end time (in milliseconds) to look for peaks (set to None to look at entire EMG after trigger onset)
 processing['peakAnalysis']['maxPeakInterval'] = 10     # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without set limit (set to None to ignore)
 processing['peakAnalysis']['prominence'] = 50          # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down 20% if no peaks/valleys are found); N.B. This is used for Max Height analysis as well (set to zero to ignore)
