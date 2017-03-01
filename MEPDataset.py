@@ -387,7 +387,6 @@ class MEPDataset(object):
             csv_writer.writerow(header_string)    
             # Write MEP data
             for channel in xrange(self.header['n_channels']):
-                
                 for trial in xrange(self.header['n_trials']):
                     trial_string = [self.channels[channel]['header']['title'], trial + 1]
                     if self.channels[channel]['ptp']:
