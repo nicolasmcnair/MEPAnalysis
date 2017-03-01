@@ -135,7 +135,7 @@ class MEPDataset(object):
                  n_trials,
                  polarity=mepconfig.polarity,
                  detrend_data=mepconfig.detrend):
-        self.header = {key:None for key in ['n_channels','sample_rate','session_time','pretrigger_time','file']}
+        self.header = {key:None for key in ['n_channels','sample_rate','session_time','pretrigger_time','posttrigger_time','file']}
         self.header['n_trials'] = n_trials
         self.header['file'] = mep_file
         self.channels = []
@@ -169,6 +169,7 @@ class MEPDataset(object):
             self.header['samples_per_trial'],remainder = divmod(n_samples, self.header['n_trials'])
             if remainder:
                 raise ValueError('Number of trials do not match number of samples.')
+            self.header['posttrigger_time'] = self.sample_to_time(self.header['samples_per_trial'])
 
             # Read in channel headers
             offset = mepconfig.adibin_file_header_byte_length
@@ -202,7 +203,7 @@ class MEPDataset(object):
         elif file_type == '.csv':
 
             # Helper function
-            def isNumber(s):
+            def is_number(s):
                 try:
                     float(s)
                     return True
@@ -211,7 +212,7 @@ class MEPDataset(object):
 
             # Read in header line
             with open(self.header['file'], 'rb') as mep_file:
-                csv_reader = reader(csv_file)
+                csv_reader = reader(mep_file)
                 header_line = next(csv_reader)
             # Get start time (this assumes first digit entry in headerline is onset time, which it should be if it's a csv file written by this module)
             file_header = {}
@@ -220,6 +221,8 @@ class MEPDataset(object):
             self.header['samples_per_trial'] = len(header_line) - time_index
             # Work out sampling rate
             self.header['sample_rate'] = (float(header_line[-1]) - float(header_line[time_index])) / (self.header['samples_per_trial'] - 1)
+            # Work out posttrigger time
+            self.header['posttrigger_time'] = self.sample_to_time(self.header['samples_per_trial'])
             # Get PTP index, if present
             ptp_index = header_line.index('PTP') if 'PTP' in header_line else None
             # Get Time Window index, if present
@@ -227,9 +230,9 @@ class MEPDataset(object):
             # Get Background movement rejection index, if present
             rejected_index = header_line.index('Rejected') if 'Rejected' in header_line else None
             # Get channel indices
-            channel_column = np.loadtxt(self.header['file'], dtype=np.str, delimiter=',',skiprows=1, usecols=0)
+            channel_column = np.loadtxt(self.header['file'], dtype=np.str, delimiter=',',skiprows=1, usecols=[0])
             self.header['n_channels'] = len(set(channel_column))
-            channel_indices = sorted([np.where(channel_columns==item)[0][0] for item in set(channel_column)])
+            channel_indices = sorted([np.where(channel_column==item)[0][0] for item in set(channel_column)])
             self.header['n_trials'] = len(channel_column) - channel_indices[-1]
             channel_indices = zip(channel_indices,channel_indices[1:] + [len(channel_column)])
             # Get data
@@ -240,22 +243,25 @@ class MEPDataset(object):
             if window_index:
                 window_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=xrange(window_index, window_index + 3), filling_values=None)
             if rejected_index:
-                rejected_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=rejected_index, filling_values=False)
+                rejected_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_index], filling_values=False)
             # Sort through channels
             for channel in xrange(self.header['n_channels']):
+                self.channels.append({'header':{}})
+                self.channels[channel]['header']['title'] = channel_column[channel_indices[channel][0]]
                 self.channels[channel]['ptp'] = self.channels[channel]['rect'] = self.channels[channel]['rejected'] = self.channels[channel]['time_window'] = None
                 # Read in channel data
-                self.channels[channel]['data'] = data[xrange(*channel_indices[channel]),:]
+                self.channels[channel]['data'] = data[slice(*channel_indices[channel])]
                 if ptp_index:
-                    self.channels[channel]['ptp'] = ptp_data[xrange(*channel_indices[channel]),:]
+                    self.channels[channel]['ptp'] = ptp_data[slice(*channel_indices[channel])]
                 if window_index:
                     self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
-                    self.channels[channel]['time_window'] = window_data[xrange(*channel_indices[channel]),:]
+                    self.channels[channel]['time_window'] = window_data[slice(*channel_indices[channel])]
                 if rejected_index:
-                    self.channels[channel]['rejected'] = rejected_data[xrange(*channel_indices[channel]),:]
+                    self.channels[channel]['rejected'] = rejected_data[slice(*channel_indices[channel])]
 
     def _parse_boundary(self,boundary):
-        return (0 if boundary[0] is None else self.time_to_sample(boundary[0]), None if boundary[1] is None else self.time_to_sample(boundary[1]) + 1)
+        return (0 if boundary[0] is None else self.time_to_sample(min((boundary[0],-self.header['pretrigger_time']),key=abs)),
+                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
 
     def time_to_sample(self, time_point):
         return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
@@ -313,7 +319,7 @@ class MEPDataset(object):
         for channel in self.channels:
             if not channel['rect']:
                 channel['rect'] = np.fabs(channel['data'])
-            channel['header']['time_window_method'] = method
+            channel['header']['time_window_method'] = method.upper()
             channel['time_window'] = [MEPDataset.extract_time_window(channel['rect'][trial], channel['ptp'][trial], boundary, method) if channel['ptp'][trial] else None for trial in xrange(self.header['n_trials'])]
 
     def analyse_peak_to_peak(self,
@@ -369,11 +375,10 @@ class MEPDataset(object):
             header_string += ['Rejected']
 
         # Get output times
-        start_time = self.sample_to_time(boundary[0])
-        end_time = self.sample_to_time(boundary[1] + 1 if boundary[1] else self.header['samples_per_trial'])
-        header_string += [str(start_time + (x * self.header['sample_rate'])) for x in xrange(int((end_time - start_time) / self.header['sample_rate']))]
+        start_time = boundary[0]
+        end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
+        header_string += [str(start_time + (x * self.header['sample_rate'])) for x in xrange(int((end_time - start_time) / self.header['sample_rate']) + 1)]
         boundary = self._parse_boundary(boundary)
-        n_samples = len(self.channels[0]['data'][0][slice(*boundary)])
 
         # Write to file
         with open(splitext(self.header['file'])[0] + '.csv','wb') as output_file:
@@ -397,7 +402,7 @@ class MEPDataset(object):
                             trial_string += ['','','']
                     if self.channels[channel]['rejected']:
                         trial_string += ['Yes'] if self.channels[channel]['rejected'][trial] else ['-']
-                    csv_writer.writerow(trial_string + [self.channels[channel]['data'][trial][x] for x in xrange(n_samples)])
+                    csv_writer.writerow(trial_string + [self.channels[channel]['data'][trial][x] for x in xrange(*boundary)])
     
     def query_data(self,query_type=None):
         plot_data(self,query_type)
@@ -406,9 +411,9 @@ class MEPDataset(object):
                 channel['ptp'] = [[channel['data'][trial][p1]-channel['data'][trial][p2],p1,p2] for trial,(_,p1,p2) in enumerate(channel['ptp'])]
         if query_type in {'time_window',None}:
             for channel in self.channels:
-                if channel['header']['time_window_method'] == 'RMS':
+                if channel['header']['time_window_method'].upper() == 'RMS':
                     channel['time_window'] = [[np.sqrt(np.mean(np.square(channel['rect'][trial][p1:p2 + 1]))),p1,p2] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
-                if channel['header']['time_window_method'] == 'AVERAGE':
+                if channel['header']['time_window_method'].upper() == 'AVERAGE':
                     channel['time_window'] = [[np.mean(channel['rect'][trial][p1:p2 + 1]),p1,p2] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
-                if channel['header']['time_window_method'] == 'AUC':
-                    channel['time_window'] = [[np.trapz(channel['rect'][trial][p1:p2 + 1]),p1,p2] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
+                if channel['header']['time_window_method'].upper() == 'AUC':
+                    channel['time_window'] = [[np.trapz(channel['rect'][trial][p1:p2 + 1],dx=1),p1,p2] for trial,(_,p1,p2) in enumerate(channel['time_window'])]

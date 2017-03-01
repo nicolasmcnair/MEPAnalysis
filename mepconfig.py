@@ -11,9 +11,9 @@ background_detection = 'both'
 # Beginning and end time (in milliseconds) to look for baseline movement. End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-background_boundary = (-100,-5)
+background_boundary = (-200,-5)
 # Threshold for RMS movement detection (in microVolts)
-background_rms_threshold = 150
+background_rms_threshold = 100
 # Threshold for peak-to-peak movement detection (in microVolts)
 background_ptp_threshold = 25
 # Minimum peak prominence (in microVolts) to qualify as a potential peak (will iterate down if no peaks/valleys are found)
