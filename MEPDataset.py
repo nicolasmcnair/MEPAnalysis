@@ -212,7 +212,6 @@ class MEPDataset(object):
                 csv_reader = reader(mep_file)
                 header_line = next(csv_reader)
             # Get start time (this assumes first digit entry in headerline is onset time, which it should be if it's a csv file written by this module)
-            file_header = {}
             time_index,self.header['pretrigger_time'] = next((x,float(y) * -1) for x,y in enumerate(header_line) if is_number(y))
             # Work out number of samples
             self.header['samples_per_trial'] = len(header_line) - time_index
