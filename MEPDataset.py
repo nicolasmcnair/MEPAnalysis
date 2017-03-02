@@ -1,15 +1,12 @@
 from __future__ import division
-import ConfigParser
 import mepconfig
 import numpy as np
 from collections import deque
-from copy import deepcopy
 from csv import reader, writer
 from datetime import datetime
 from os.path import splitext
 from scipy.signal import detrend
 from struct import unpack_from
-from operator import itemgetter
 from plotmep import plot_data
 
 class MEPDataset(object):

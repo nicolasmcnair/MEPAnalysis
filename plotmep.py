@@ -232,7 +232,6 @@ class queryManager(object):
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
 def plot_data(mep_dataset,query_type):
-    data_query = None
     # Cycle through channels
     for channel in mep_dataset.channels:
         if query_type is None:
