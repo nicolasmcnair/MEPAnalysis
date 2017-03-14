@@ -403,12 +403,14 @@ class MEPDataset(object):
         plot_data(self,query_type)
         if query_type in {'ptp',None}:
             for channel in self.channels:
-                channel['ptp'] = [[channel['data'][trial][ptp[1]]-channel['data'][trial][ptp[2]],ptp[1],ptp[2]] if ptp is not None else None for trial,ptp in enumerate(channel['ptp'])]
+                if channel['ptp']:
+                    channel['ptp'] = [[channel['data'][trial][ptp[1]]-channel['data'][trial][ptp[2]],ptp[1],ptp[2]] if ptp is not None else None for trial,ptp in enumerate(channel['ptp'])]
         if query_type in {'time_window',None}:
             for channel in self.channels:
-                if channel['header']['time_window_method'].upper() == 'RMS':
-                    channel['time_window'] = [[np.sqrt(np.mean(np.square(channel['rect'][trial][window[1]:window[2] + 1]))),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
-                if channel['header']['time_window_method'].upper() == 'AVERAGE':
-                    channel['time_window'] = [[np.mean(channel['rect'][trial][window[1]:window[2] + 1]),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
-                if channel['header']['time_window_method'].upper() == 'AUC':
-                    channel['time_window'] = [[np.trapz(channel['rect'][trial][window[1]:window[2] + 1],dx=1),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                if channel['time_window']:
+                    if channel['header']['time_window_method'].upper() == 'RMS':
+                        channel['time_window'] = [[np.sqrt(np.mean(np.square(channel['rect'][trial][window[1]:window[2] + 1]))),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                    if channel['header']['time_window_method'].upper() == 'AVERAGE':
+                        channel['time_window'] = [[np.mean(channel['rect'][trial][window[1]:window[2] + 1]),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                    if channel['header']['time_window_method'].upper() == 'AUC':
+                        channel['time_window'] = [[np.trapz(channel['rect'][trial][window[1]:window[2] + 1],dx=1),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
