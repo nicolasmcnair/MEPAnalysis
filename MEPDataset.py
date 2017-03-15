@@ -179,6 +179,8 @@ class MEPDataset(object):
                 # Adjust scale to incoporate voltage correction (so output is in microvolts)
                 self.channels[channel]['header']['scale'] = channel_header.popleft() * [1000000,1000,1][(['V', 'mV', '?V'].index(self.channels[channel]['header']['units']))]
                 self.channels[channel]['header']['offset'] = channel_header.popleft()
+                self.channels[channel]['header']['ptp'] = self.channels[channel]['header']['time_window'] = self.channels[channel]['header']['rejected'] = False
+                self.channels[channel]['header']['time_window_method'] = None
                 # N.B. The last two elements in channel_header (rangeHigh & rangeLow) are unused
                 offset += mepconfig.adibin_channel_header_byte_length
                 del channel_header
@@ -193,7 +195,9 @@ class MEPDataset(object):
                 self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
                 if detrend_data:
                     self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_data)
-                self.channels[channel]['ptp'] = self.channels[channel]['rect'] = self.channels[channel]['rejected'] = self.channels[channel]['time_window'] = None
+                self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
+                self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
+                self.channels[channel]['rejected'] = None
             del adibin_data
 
         # Read ASCII file
@@ -244,15 +248,21 @@ class MEPDataset(object):
             for channel in xrange(self.header['n_channels']):
                 self.channels.append({'header':{}})
                 self.channels[channel]['header']['title'] = channel_column[channel_indices[channel][0]]
-                self.channels[channel]['ptp'] = self.channels[channel]['rect'] = self.channels[channel]['rejected'] = self.channels[channel]['time_window'] = None
+                self.channels[channel]['header']['ptp'] = self.channels[channel]['header']['time_window'] = self.channels[channel]['header']['rejected'] = False
+                self.channels[channel]['header']['time_window_method'] = None
+                self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
+                self.channels[channel]['rect'] = self.channels[channel]['rejected'] = None
                 # Read in channel data
                 self.channels[channel]['data'] = data[slice(*channel_indices[channel])]
+                self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
                 if ptp_index:
+                    self.channels[channel]['header']['ptp'] = True
                     self.channels[channel]['ptp'] = ptp_data[slice(*channel_indices[channel])]
                 if window_index:
-                    self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
+                    self.channels[channel]['header']['time_window'] = True
                     self.channels[channel]['time_window'] = window_data[slice(*channel_indices[channel])]
                 if rejected_index:
+                    self.channels[channel]['header']['rejected'] = True
                     self.channels[channel]['rejected'] = rejected_data[slice(*channel_indices[channel])]
 
     def _parse_boundary(self,boundary):
@@ -275,10 +285,12 @@ class MEPDataset(object):
         # Detection must be 'PTP', 'RMS', or 'BOTH'
         if method.upper() not in MEPDataset.BACKGROUND_MOVEMENT_DETECTION_METHODS:
             raise ValueError('Invalid background movement detection value.')
-        # Convert boundary for background movement detection to samples
+        # Convert boundary for background movement detection and max ptp interval to samples
         boundary = self._parse_boundary(boundary)
+        max_ptp_interval = int(max_ptp_interval / self.header['sample_rate'])
         # Detect background movement
         for channel in self.channels:
+            channel['header']['rejected'] = True
             channel['rejected'] = [False] * self.header['n_trials']
             for trial in xrange(self.header['n_trials']):
                 # Handle PTP detection
@@ -293,12 +305,12 @@ class MEPDataset(object):
                         # Get valleys
                         valley = [x[0] for x in valleys if  peak[0] < x[0] <= peak_boundary]
                         # If we got a valley, check that the peak-to-peak exceeds the threshold
-                        if valley and ptp_threshold < (peak[0] - valley[0]):
-                            self.channels[channel]['rejected'][trial] = True
+                        if valley and ptp_threshold < (channel['data'][trial][peak[0]] - channel['data'][trial][valley[0]]):
+                            channel['rejected'][trial] = True
                             break  
                 # Handle RMS detection
-                elif method.upper() in {'RMS','BOTH'} and not self.channels[channel]['rejected'][trial]:
-                    self.channels[channel]['rejected'][trial] = rms_threshold < MEPDataset.extract_time_window(channel['data'], boundary, 'RMS', search=False, detrend=True)[0]
+                if method.upper() in {'RMS','BOTH'} and not channel['rejected'][trial]:
+                    channel['rejected'][trial] = rms_threshold < MEPDataset.extract_time_window(channel['rect'][trial], channel['data'][trial], boundary, 'RMS', search=False, detrend_data=True)[0]
 
     def analyse_time_window(self,
                             method=mepconfig.time_window_detection,
@@ -307,21 +319,21 @@ class MEPDataset(object):
         if method.upper() not in MEPDataset.TIME_WINDOW_DETECTION_METHODS:
             raise ValueError('Invalid time window detection value. Must be: AUC, Average, or RMS.')
         # Do we have peak-to-peak information?
-        if not all([bool(channel['ptp']) for channel in self.channels]):
-            self.analyse_peak_to_peak()
+        if self.header['n_channels'] and not all([channel['header']['ptp'] for channel in self.channels]):
+            self.analyse_peak_to_peak(secondary_to_time_window=True)
         # Convert boundary for peak detection to samples
         boundary = self._parse_boundary(boundary)
         # Create rectified data and then extract time window info for each trial (but only if we detected movement - i.e., have a ptp value)
         for channel in self.channels:
-            if not channel['rect']:
-                channel['rect'] = np.fabs(channel['data'])
+            channel['header']['time_window'] = True
             channel['header']['time_window_method'] = method.upper()
-            channel['time_window'] = [MEPDataset.extract_time_window(channel['rect'][trial], channel['ptp'][trial], boundary, method) if channel['ptp'][trial] else None for trial in xrange(self.header['n_trials'])]
+            channel['time_window'] = [MEPDataset.extract_time_window(channel['rect'][trial], channel['ptp'][trial], boundary, method) if channel['ptp'][trial][0] else [None,None,None] for trial in xrange(self.header['n_trials'])]
 
     def analyse_peak_to_peak(self,
                              method=mepconfig.peak_detection,
                              boundary = mepconfig.peak_time_window,
-                             max_ptp_interval=mepconfig.peak_max_ptp_interval):
+                             max_ptp_interval=mepconfig.peak_max_ptp_interval,
+                             secondary_to_time_window=False):
         # Detection must be 'HEIGHT' or 'PROM'
         if method.upper() == 'HEIGHT':
             def sort_key_function(tup): return tup[1]
@@ -337,6 +349,7 @@ class MEPDataset(object):
         # Extract PTP data
         max_ptp_interval = max_ptp_interval // self.header['sample_rate']
         for channel in self.channels:
+            channel['header']['ptp'] = False if secondary_to_time_window else True
             channel['ptp'] = [None] * self.header['n_trials']
             for trial in xrange(self.header['n_trials']):
                 peaks,valleys = MEPDataset.extract_peaks_and_valleys(channel['data'][trial], boundary)
@@ -357,60 +370,72 @@ class MEPDataset(object):
                     else:
                         p1 = None
                 # Calculate peak-to-peak value
-                channel['ptp'][trial] = [channel['data'][trial][p1] - channel['data'][trial][p2],p1,p2] if p1 and p2 else None
+                channel['ptp'][trial] = [channel['data'][trial][p1] - channel['data'][trial][p2],p1,p2] if p1 and p2 else [None,None,None]
 
     def write_to_file(self,
                       boundary=mepconfig.output_time_window):
-        # Get MEP header line
-        header_string = ['Channel','Trial']
-        if self.channels[0]['ptp']:
-            header_string += ['PTP','P1','P2']
-        if self.channels[0]['time_window']:
-            header_string += [self.channels[0]['header']['time_window_method'].upper(),'Onset','Offset']
-        if self.channels[0]['rejected']:
-            header_string += ['Rejected']
+        # Make sure we have channel data
+        if self.header['n_channels']:
+            # Get MEP header line
+            header_string = ['Channel','Trial']
+            if any([channel['header']['ptp'] for channel in self.channels]):
+                header_string += ['PTP','P1','P2']
+            if any([channel['header']['time_window'] for channel in self.channels]):
+                index = [channel['header']['time_window'] for channel in self.channels].index(True)
+                header_string += [self.channels[index]['header']['time_window_method'].upper(),'Onset','Offset']
+            if any([channel['header']['rejected'] for channel in self.channels]):
+                header_string += ['Rejected']
 
-        # Get output times
-        start_time = boundary[0]
-        end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
-        header_string += [str(start_time + (x * self.header['sample_rate'])) for x in xrange(int((end_time - start_time) / self.header['sample_rate']) + 1)]
-        boundary = self._parse_boundary(boundary)
+            # Get output times
+            start_time = boundary[0]
+            end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
+            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in xrange(int((end_time - start_time) / self.header['sample_rate']) + 1)]
+            boundary = self._parse_boundary(boundary)
 
-        # Write to file
-        with open(splitext(self.header['file'])[0] + '.csv','wb') as output_file:
-            csv_writer = writer(output_file)
-            # Write header 
-            csv_writer.writerow(header_string)    
-            # Write MEP data
-            for channel in xrange(self.header['n_channels']):
-                for trial in xrange(self.header['n_trials']):
-                    trial_string = [self.channels[channel]['header']['title'], trial + 1]
-                    if self.channels[channel]['ptp']:
-                        if self.channels[channel]['ptp'][trial]:
-                            trial_string += [self.channels[channel]['ptp'][trial][0]] + [self.sample_to_time(x) for x in self.channels[channel]['ptp'][trial][1:]]
-                        else:
-                            trial_string += ['','','']
-                    if self.channels[channel]['time_window']:
-                        if self.channels[channel]['time_window'][trial]:
-                            trial_string += [self.channels[channel]['time_window'][trial][0]] + [self.sample_to_time(x) for x in self.channels[channel]['time_window'][trial][1:]]
-                        else:
-                            trial_string += ['','','']
-                    if self.channels[channel]['rejected']:
-                        trial_string += ['Yes'] if self.channels[channel]['rejected'][trial] else ['-']
-                    csv_writer.writerow(trial_string + [self.channels[channel]['data'][trial][x] for x in xrange(*boundary)])
+            # Write to file
+            with open(splitext(self.header['file'])[0] + '.csv','wb') as output_file:
+                csv_writer = writer(output_file)
+                # Write header 
+                csv_writer.writerow(header_string)    
+                # Write MEP data
+                for channel in self.channels:
+                    for trial in xrange(self.header['n_trials']):
+                        trial_string = [channel['header']['title'], trial + 1]
+                        if channel['header']['ptp']:
+                            if channel['ptp'][trial][0] and (not channel['header']['rejected'] or not channel['rejected'][trial]):
+                                trial_string += [channel['ptp'][trial][0]] + [self.sample_to_time(x) for x in channel['ptp'][trial][1:]]
+                            else:
+                                trial_string += ['','','']
+                        if channel['header']['time_window']:
+                            if channel['time_window'][trial][0] and (not channel['header']['rejected'] or not channel['rejected'][trial]):
+                                trial_string += [channel['time_window'][trial][0]] + [self.sample_to_time(x) for x in channel['time_window'][trial][1:]]
+                            else:
+                                trial_string += ['','','']
+                        if channel['header']['rejected']:
+                            trial_string += ['Yes'] if channel['rejected'][trial] else ['-']
+                        csv_writer.writerow(trial_string + [channel['data'][trial][x] for x in xrange(*boundary)])
+        else:
+            raise IndexError('No channel information found.')
     
     def query_data(self,query_type=None):
+        # If no query type provided, then query whatever exists
+        if query_type is None:
+            query_type = ['ptp'] if any([channel['header']['ptp'] for channel in self.channels]) else []
+            query_type += ['time_window'] if any([channel['header']['time_window'] for channel in self.channels]) else []
+        # Pass to plot_data
         plot_data(self,query_type)
-        if query_type in {'ptp',None}:
+        # If we queried the ptp data, then recalculate the ptp values
+        if 'ptp' in query_type:
             for channel in self.channels:
-                if channel['ptp']:
-                    channel['ptp'] = [[channel['data'][trial][ptp[1]]-channel['data'][trial][ptp[2]],ptp[1],ptp[2]] if ptp is not None else None for trial,ptp in enumerate(channel['ptp'])]
-        if query_type in {'time_window',None}:
+                if channel['header']['ptp']:
+                    channel['ptp'] = [[channel['data'][trial][p1]-channel['data'][trial][p2],p1,p2] if None not in (p1,p2) else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['ptp'])]
+        # If we queried the time window data, then recalculate the time window values
+        if 'time_window' in query_type:
             for channel in self.channels:
-                if channel['time_window']:
+                if channel['header']['time_window']:
                     if channel['header']['time_window_method'].upper() == 'RMS':
-                        channel['time_window'] = [[np.sqrt(np.mean(np.square(channel['rect'][trial][window[1]:window[2] + 1]))),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                        channel['time_window'] = [[np.sqrt(np.mean(np.square(channel['rect'][trial][p1:p2 + 1]))),p1,p2] if None not in (p1,p2)  else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
                     if channel['header']['time_window_method'].upper() == 'AVERAGE':
-                        channel['time_window'] = [[np.mean(channel['rect'][trial][window[1]:window[2] + 1]),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                        channel['time_window'] = [[np.mean(channel['rect'][trial][p1:p2 + 1]),p1,p2] if None not in (p1,p2)  else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
                     if channel['header']['time_window_method'].upper() == 'AUC':
-                        channel['time_window'] = [[np.trapz(channel['rect'][trial][window[1]:window[2] + 1],dx=1),window[1],window[2]] if window is not None else None for trial,window in enumerate(channel['time_window'])]
+                        channel['time_window'] = [[np.trapz(channel['rect'][trial][p1:p2 + 1],dx=1),p1,p2] if None not in (p1,p2)  else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['time_window'])]

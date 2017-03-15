@@ -61,6 +61,7 @@ class queryManager(object):
         self.axes = self.fig.add_subplot(1,1,1)
         self.fig.canvas.draw()
         self.points = {}
+        self.rejected = {}
         if query_type == 'time_window':
             self.peak1_offset = queryManager.text_offsets['left']
             self.peak2_offset = queryManager.text_offsets['right']
@@ -79,7 +80,14 @@ class queryManager(object):
             self.peak2_label = 'P2'
             self.fill = None
             self.data = channel['data']
-        self.rejected = channel['rejected']
+        if channel['header']['rejected']:
+            self.rejected['original'] = channel['rejected']
+            self.rejected['user'] = channel['rejected'][:]
+        else:
+            channel['header']['rejected'] = True
+            channel['rejected'] = [False] * header['n_trials']
+            self.rejected['original'] = channel['rejected']
+            self.rejected['user'] = [False] * header['n_trials']
         self.points['original'] = channel[query_type]
         self.points['user'] = deepcopy(channel[query_type])
         self.axes.set_ylabel(r'$\mu$V')
@@ -107,12 +115,13 @@ class queryManager(object):
 
     def update_points(self):
         for idx in xrange(len(self.points['original'])):
+            self.rejected['original'][idx] = self.rejected['user'][idx]
             self.points['original'][idx] = self.points['user'][idx]
 
     def update_display(self):
         self.fig.suptitle(self.channel_name + ': Trial ' + str(self.current_trial + 1))
         self.current_plot.set_ydata(self.data[self.current_trial])
-        if self.rejected[self.current_trial]:
+        if self.rejected['user'][self.current_trial]:
             self.current_plot.set_c(queryManager.colours['bad_plot'])
         else:
             self.current_plot.set_c(queryManager.colours['good_plot'])
@@ -170,12 +179,12 @@ class queryManager(object):
                 self.update_points()
                 plt.close()
         elif event.key == 'backspace':
-            if self.rejected[self.current_trial]:
+            if self.rejected['user'][self.current_trial]:
                 self.current_plot.set_c(queryManager.colours['good_plot'])
-                self.rejected[self.current_trial] = False
+                self.rejected['user'][self.current_trial] = False
             else:
                 self.current_plot.set_c(queryManager.colours['bad_plot'])
-                self.rejected[self.current_trial] = True
+                self.rejected['user'][self.current_trial] = True
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
@@ -184,7 +193,7 @@ class queryManager(object):
             self.user_markers['peak2'].set_visible(False)
             self.axes.draw_artist(self.user_markers['peak1'])
             self.axes.draw_artist(self.user_markers['peak2'])
-            self.points['user'][self.current_trial] = [None,None]
+            self.points['user'][self.current_trial] = [None,None,None]
             if (self.query_type == 'time_window') and self.fill:
                 self.fill.remove()
                 del self.fill
@@ -209,7 +218,7 @@ class queryManager(object):
             self.user_markers['peak1'].xy = (self.points['user'][self.current_trial][1],self.data[self.current_trial][self.points['user'][self.current_trial][1]])
             self.user_markers['peak1'].set_visible(True)
             self.axes.draw_artist(self.user_markers['peak1'])
-            if self.points['user'][self.current_trial][1] and (self.query_type == 'time_window'):
+            if (self.query_type == 'time_window') and self.points['user'][self.current_trial][1] and self.points['user'][self.current_trial][2]:
                 if self.fill:
                     self.fill.remove()
                     del self.fill
@@ -222,7 +231,7 @@ class queryManager(object):
             self.user_markers['peak2'].xy = (self.points['user'][self.current_trial][2],self.data[self.current_trial][self.points['user'][self.current_trial][2]])
             self.user_markers['peak2'].set_visible(True)
             self.axes.draw_artist(self.user_markers['peak2'])
-            if self.points['user'][self.current_trial][1] and (self.query_type == 'time_window'):
+            if (self.query_type == 'time_window') and self.points['user'][self.current_trial][1] and self.points['user'][self.current_trial][2]:
                 if self.fill:
                     self.fill.remove()
                     del self.fill
@@ -234,9 +243,6 @@ class queryManager(object):
 def plot_data(mep_dataset,query_type):
     # Cycle through channels
     for channel in mep_dataset.channels:
-        if query_type is None:
-            query_type = ['ptp'] if channel['ptp'] else []
-            query_type += ['time_window'] if channel['time_window'] else []
         # Pass all arguments to queryManager
         if 'ptp' in query_type:
             if channel['ptp']:

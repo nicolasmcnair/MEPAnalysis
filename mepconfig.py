@@ -15,7 +15,7 @@ background_boundary = (-200,-5)
 # Threshold for RMS movement detection (in microVolts)
 background_rms_threshold = 100
 # Threshold for peak-to-peak movement detection (in microVolts)
-background_ptp_threshold = 25
+background_ptp_threshold = 50
 # Minimum peak prominence (in microVolts) to qualify as a potential peak (will iterate down if no peaks/valleys are found)
 background_peak_prominence = 10
 # Peak analysis: 'Height' or 'Prom'
@@ -25,7 +25,7 @@ peak_detection = 'height'
 # To end the time window at the end of the data, set the second value to None
 peak_time_window = (15,50)
 # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without this limit; set to float('Inf') to ignore
-peak_max_ptp_interval = 10
+peak_max_ptp_interval = 15
 # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down if no peaks/valleys are found); set to zero to ignore
 # N.B. This is also used for Height analysis
 peak_prominence = 50
