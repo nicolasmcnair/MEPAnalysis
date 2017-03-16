@@ -296,9 +296,6 @@ class MEPDataset(object):
                 # Handle PTP detection
                 if method.upper() in {'PTP','BOTH'}:
                     peaks, valleys = MEPDataset.extract_peaks_and_valleys(channel['data'][trial], boundary, prominence=peak_prominence)
-                    # Swap if valleys are first
-                    if peaks[0][0] > valleys[0][0]:
-                        peaks, valleys = valleys, peaks
                     # Marry peaks to valleys and get peak-to-peak values
                     for peak in peaks:
                         peak_boundary = max_ptp_interval + peak[0]
