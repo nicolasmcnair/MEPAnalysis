@@ -84,14 +84,11 @@ class MEPDataset(object):
                             ptp_data,
                             boundary=(0,None),
                             method=mepconfig.time_window_detection,
-                            search=True,
-                            detrend_data=False):
+                            search=True):
         #Set up return values
         window_amplitude = onset = offset = None
         # Get subsample of data
         sample_data = rect_data[slice(*boundary)]
-        if detrend_data:
-            sample_data = detrend(sample_data)
         # Are we searching for onset/offset times?
         if search:
             # Calculate cumulative signal
@@ -108,7 +105,7 @@ class MEPDataset(object):
                 offset = np.argmin(integrated_profile[onset:]) + onset
         else:
             onset,offset = boundary
-        if onset:
+        if onset is not None:
             if method.upper() == 'RMS':
                 # Get rms amplitude
                 window_amplitude = np.sqrt(np.mean(np.square(sample_data[onset:offset + 1])))
@@ -307,7 +304,7 @@ class MEPDataset(object):
                             break  
                 # Handle RMS detection
                 if method.upper() in {'RMS','BOTH'} and not channel['rejected'][trial]:
-                    channel['rejected'][trial] = rms_threshold < MEPDataset.extract_time_window(channel['rect'][trial], channel['data'][trial], boundary, 'RMS', search=False, detrend_data=True)[0]
+                    channel['rejected'][trial] = rms_threshold < MEPDataset.extract_time_window(channel['rect'][trial], channel['data'][trial], boundary, 'RMS', search=False)[0]
 
     def analyse_time_window(self,
                             method=mepconfig.time_window_detection,
