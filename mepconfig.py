@@ -23,7 +23,7 @@ peak_detection = 'height'
 # Beginning and end time (in milliseconds) to look for peaks. End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-peak_time_window = (15,50)
+peak_time_window = (20,50)
 # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without this limit; set to float('Inf') to ignore
 peak_max_ptp_interval = 15
 # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down if no peaks/valleys are found); set to zero to ignore

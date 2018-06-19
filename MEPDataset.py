@@ -1,10 +1,12 @@
 from __future__ import division
 import mepconfig
 import numpy as np
+import io
 from collections import deque
 from csv import reader, writer
 from datetime import datetime
 from os.path import splitext
+from sys import version_info
 from scipy.signal import detrend
 from struct import unpack_from
 from plotmep import plot_data
@@ -147,7 +149,13 @@ class MEPDataset(object):
             # Unpack and then parse the file header
             adibin_header = deque(unpack_from(mepconfig.adibin_file_header_fmt_string, adibin_contents, 0))
             # On valid LabChart binary files the first four bytes spell "CFWB"
-            if adibin_header.popleft() != 'CFWB':
+            adibin_version = adibin_header.popleft()
+            if isinstance(adibin_version, bytes):
+                adibin_version = adibin_version.decode('ascii')
+                convert_from_bytes = True
+            else:
+                convert_from_bytes = False
+            if adibin_version != 'CFWB':
                 raise ValueError('Incorrect file format.')
             adibin_header.popleft() # Dump version info
             self.header['sample_rate'] = adibin_header.popleft() * 1000
@@ -168,11 +176,15 @@ class MEPDataset(object):
             # Read in channel headers
             offset = mepconfig.adibin_file_header_byte_length
             self.channels = [None] * self.header['n_channels']
-            for channel in xrange(self.header['n_channels']):
+            for channel in range(self.header['n_channels']):
                 channel_header = deque(unpack_from("<64c4d", adibin_contents, offset))
                 self.channels[channel] = {'header':{}}
-                self.channels[channel]['header']['title'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
-                self.channels[channel]['header']['units'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
+                if convert_from_bytes:
+                    self.channels[channel]['header']['title'] = ''.join([channel_header.popleft().decode('ascii') for _ in range(32)]).replace('\x00', '')
+                    self.channels[channel]['header']['units'] = ''.join([channel_header.popleft().decode('ascii') for _ in range(32)]).replace('\x00', '')
+                else:
+                    self.channels[channel]['header']['title'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
+                    self.channels[channel]['header']['units'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
                 # Adjust scale to incoporate voltage correction (so output is in microvolts)
                 self.channels[channel]['header']['scale'] = channel_header.popleft() * [1000000,1000,1][(['V', 'mV', '?V'].index(self.channels[channel]['header']['units']))]
                 self.channels[channel]['header']['offset'] = channel_header.popleft()
@@ -187,7 +199,7 @@ class MEPDataset(object):
             del adibin_contents
 
             # Extract interleaved channel data (time channel is first, if present)
-            for channel in xrange(self.header['n_channels']):
+            for channel in range(self.header['n_channels']):
                 # Create data array
                 self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
                 if detrend_data:
@@ -234,15 +246,15 @@ class MEPDataset(object):
             channel_indices = zip(channel_indices,channel_indices[1:] + [len(channel_column)])
             # Get data
             ptp_data = window_data = rejected_data = None
-            data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=xrange(time_index, len(header_line)))
+            data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(time_index, len(header_line)))
             if ptp_index:
-                ptp_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=xrange(ptp_index, ptp_index + 3), filling_values=None)
+                ptp_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(ptp_index, ptp_index + 3), filling_values=None)
             if window_index:
-                window_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=xrange(window_index, window_index + 3), filling_values=None)
+                window_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(window_index, window_index + 3), filling_values=None)
             if rejected_index:
                 rejected_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_index], filling_values=False)
             # Sort through channels
-            for channel in xrange(self.header['n_channels']):
+            for channel in range(self.header['n_channels']):
                 self.channels.append({'header':{}})
                 self.channels[channel]['header']['title'] = channel_column[channel_indices[channel][0]]
                 self.channels[channel]['header']['ptp'] = self.channels[channel]['header']['time_window'] = self.channels[channel]['header']['rejected'] = False
@@ -289,7 +301,7 @@ class MEPDataset(object):
         for channel in self.channels:
             channel['header']['rejected'] = True
             channel['rejected'] = [False] * self.header['n_trials']
-            for trial in xrange(self.header['n_trials']):
+            for trial in range(self.header['n_trials']):
                 # Handle PTP detection
                 if method.upper() in {'PTP','BOTH'}:
                     peaks, valleys = MEPDataset.extract_peaks_and_valleys(channel['data'][trial], boundary, prominence=peak_prominence)
@@ -321,7 +333,7 @@ class MEPDataset(object):
         for channel in self.channels:
             channel['header']['time_window'] = True
             channel['header']['time_window_method'] = method.upper()
-            channel['time_window'] = [MEPDataset.extract_time_window(channel['rect'][trial], channel['ptp'][trial], boundary, method) if channel['ptp'][trial][0] else [None,None,None] for trial in xrange(self.header['n_trials'])]
+            channel['time_window'] = [MEPDataset.extract_time_window(channel['rect'][trial], channel['ptp'][trial], boundary, method) if channel['ptp'][trial][0] else [None,None,None] for trial in range(self.header['n_trials'])]
 
     def analyse_peak_to_peak(self,
                              method=mepconfig.peak_detection,
@@ -345,7 +357,7 @@ class MEPDataset(object):
         for channel in self.channels:
             channel['header']['ptp'] = False if secondary_to_time_window else True
             channel['ptp'] = [None] * self.header['n_trials']
-            for trial in xrange(self.header['n_trials']):
+            for trial in range(self.header['n_trials']):
                 peaks,valleys = MEPDataset.extract_peaks_and_valleys(channel['data'][trial], boundary)
                 p1 = p2 = None
                 # Are there any peaks?
@@ -383,17 +395,17 @@ class MEPDataset(object):
             # Get output times
             start_time = boundary[0]
             end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
-            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in xrange(int((end_time - start_time) / self.header['sample_rate']) + 1)]
+            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in range(int((end_time - start_time) / self.header['sample_rate']) + 1)]
             boundary = self._parse_boundary(boundary)
 
             # Write to file
-            with open(splitext(self.header['file'])[0] + '.csv','wb') as output_file:
+            with (open(splitext(self.header['file'])[0] + '.csv','w',newline='') if version_info[0] > 2 else open(splitext(self.header['file'])[0] + '.csv','wb')) as output_file:
                 csv_writer = writer(output_file)
                 # Write header 
                 csv_writer.writerow(header_string)    
                 # Write MEP data
                 for channel in self.channels:
-                    for trial in xrange(self.header['n_trials']):
+                    for trial in range(self.header['n_trials']):
                         trial_string = [channel['header']['title'], trial + 1]
                         if channel['header']['ptp']:
                             if channel['ptp'][trial][0] and (not channel['header']['rejected'] or not channel['rejected'][trial]):
@@ -407,17 +419,17 @@ class MEPDataset(object):
                                 trial_string += ['','','']
                         if channel['header']['rejected']:
                             trial_string += ['Yes'] if channel['rejected'][trial] else ['-']
-                        csv_writer.writerow(trial_string + [channel['data'][trial][x] for x in xrange(*boundary)])
+                        csv_writer.writerow(trial_string + [channel['data'][trial][x] for x in range(*boundary)])
         else:
             raise IndexError('No channel information found.')
     
-    def query_data(self,query_type=None):
+    def query_data(self,query_type=None,reference_line=False):
         # If no query type provided, then query whatever exists
         if query_type is None:
             query_type = ['ptp'] if any([channel['header']['ptp'] for channel in self.channels]) else []
             query_type += ['time_window'] if any([channel['header']['time_window'] for channel in self.channels]) else []
         # Pass to plot_data
-        plot_data(self,query_type)
+        plot_data(self,query_type,reference_line)
         # If we queried the ptp data, then recalculate the ptp values
         if 'ptp' in query_type:
             for channel in self.channels:

@@ -1,7 +1,13 @@
 from MEPDataset import MEPDataset
-from Tkinter import Tk
-from tkFileDialog import askopenfilename
-from tkSimpleDialog import askinteger
+try:
+    from Tkinter import Tk
+    from tkFileDialog import askopenfilename
+    from tkSimpleDialog import askinteger 
+except ModuleNotFoundError:
+    from tkinter import Tk
+    from tkinter.filedialog import askopenfilename
+    from tkinter.simpledialog import askinteger 
+
 
 # Either set the number of trials here, or set to None to have a dialog query the number when you load a file
 specified_n_trials = None
@@ -24,5 +30,5 @@ mep_dataset = MEPDataset(file_name,n_trials)                                    
 mep_dataset.detect_background_movement()
 mep_dataset.analyse_peak_to_peak()
 #mep_dataset.analyse_time_window()
-mep_dataset.query_data()
+mep_dataset.query_data(reference_line=False)
 mep_dataset.write_to_file()

@@ -1,12 +1,21 @@
-from tkMessageBox import askokcancel
 import warnings
 warnings.simplefilter(action = "ignore", category = FutureWarning)
+try:
+    from tkMessageBox import askokcancel
+except ModuleNotFoundError:
+    from tkinter.messagebox import askokcancel
 import matplotlib
 matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.spatial as spatial
 from copy import deepcopy
+
+plt.rcParams['keymap.back'] = ''
+plt.rcParams['keymap.forward'] = ''
+plt.rcParams['keymap.home'] = ''
+plt.rcParams['keymap.pan'] = ''
+plt.rcParams['keymap.zoom'] = ''
 
 class dataCursor(object):
     """Display the x,y location of the nearest data point."""
@@ -49,9 +58,9 @@ class queryManager(object):
 
     text_offsets = {'left':(-30,15),'right':(30,15),'top':(0,18),'bottom':(0,-27)}
     arrow_lengths = {'left':15,'right':15,'top':15,'bottom':15}
-    colours = {'user':'red','original':'green','fill':'cyan','good_plot':'black','bad_plot':'red'}
+    colours = {'user':'red','original':'green','fill':'cyan','good_plot':'black','bad_plot':'red','reference_line':'green'}
 
-    def __init__(self,channel, header, query_type):
+    def __init__(self,channel, header, query_type, reference_line):
         self.channel_name = channel['header']['title']
         self.query_type = query_type
         self.current_trial = 0
@@ -80,6 +89,7 @@ class queryManager(object):
             self.peak2_label = 'P2'
             self.fill = None
             self.data = channel['data']
+        self.n_trials = header['n_trials']
         if channel['header']['rejected']:
             self.rejected['original'] = channel['rejected']
             self.rejected['user'] = channel['rejected'][:]
@@ -90,6 +100,11 @@ class queryManager(object):
             self.rejected['user'] = [False] * header['n_trials']
         self.points['original'] = channel[query_type]
         self.points['user'] = deepcopy(channel[query_type])
+        #if reference_line:
+        #    self.reference_line = np.mean(self.data[[idx for idx,value in enumerate(self.rejected['user']) if value == False]],axis=0)
+        #    self.reference_plot, = self.axes.plot(self.reference_line - (self.data[0] / (self.n_trials - sum(self.rejected['user']))),color=queryManager.colours['reference_line'])
+        #else:
+        #    self.reference_line = self.reference_plot = None
         self.axes.set_ylabel(r'$\mu$V')
         self.axes.set_xlabel('time (ms)')
         self.axes.set_xticks(range(0,len(self.data[0]) + 1,100))
@@ -114,7 +129,7 @@ class queryManager(object):
         plt.show()
 
     def update_points(self):
-        for idx in xrange(len(self.points['original'])):
+        for idx in range(len(self.points['original'])):
             self.rejected['original'][idx] = self.rejected['user'][idx]
             self.points['original'][idx] = self.points['user'][idx]
 
@@ -162,6 +177,9 @@ class queryManager(object):
         self.axes.draw_artist(self.user_markers['peak1'])
         self.axes.draw_artist(self.user_markers['peak2'])
         self.axes.draw_artist(self.current_plot)
+        #if self.reference_line is not None:
+        #    self.reference_plot.set_ydata(self.reference_line - (self.data[self.current_trial] / (self.n_trials - sum(self.rejected['user']))))
+        #    self.axes.draw_artist(self.reference_plot)
 
     def mouse_scroll(self,event):
             new_trial = max(0,self.current_trial - 1) if event.step > 0 else min(len(self.data) - 1,self.current_trial + 1)
@@ -187,7 +205,6 @@ class queryManager(object):
                 self.rejected['user'][self.current_trial] = True
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
-
         elif event.key == 'delete':
             self.user_markers['peak1'].set_visible(False)
             self.user_markers['peak2'].set_visible(False)
@@ -240,17 +257,17 @@ class queryManager(object):
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-def plot_data(mep_dataset,query_type):
+def plot_data(mep_dataset,query_type,reference_line):
     # Cycle through channels
     for channel in mep_dataset.channels:
         # Pass all arguments to queryManager
         if 'ptp' in query_type:
             if channel['ptp']:
-                queryManager(channel,mep_dataset.header,'ptp')
+                queryManager(channel,mep_dataset.header,'ptp',reference_line)
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
         if 'time_window' in query_type:
             if channel['time_window']:
-                queryManager(channel,mep_dataset.header,'time_window')
+                queryManager(channel,mep_dataset.header,'time_window',reference_line)
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
