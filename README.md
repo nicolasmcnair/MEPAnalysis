@@ -1,5 +1,5 @@
 # MEPAnalysis
-Python script for analysing LabChart binary files containing MEP data.
+Python script for analysing LabChart binary files containing MEP data. These must be in .adibin format, and you must know the number of trials in the file (you can check the original .adicht file in LabReader to determine this).
 
 Figure Controls:
 Left click: Set P1/Onset
