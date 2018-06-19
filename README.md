@@ -10,3 +10,5 @@ Backspace: Toggle flag for background movement detection
 Left/Right arrow: Cycle backward/forward through trials
 Scroll Up/Down: Cycle backward/forward through trials
 Escape: Quit entire MEP data analysis (this will mean no file is written)
+
+Note: Depending on the Python version/distro you are running, you may need to alter line 8 in plotmep.py to a graphics backend that is supported in your installation (e.g., Qt4Agg, Qt5Agg, etc...).
