@@ -1,7 +1,6 @@
 from __future__ import division
 import mepconfig
 import numpy as np
-import io
 from collections import deque
 from csv import reader, writer
 from datetime import datetime
