@@ -1,5 +1,5 @@
 # MEPAnalysis
-Python script for analysing LabChart binary files containing MEP data. These must be in .adibin format, and you must know the number of trials in the file (you can check the original .adicht file in LabReader to determine this). This has been updated to run on Windows using both Python 2 and 3, however there have been some issues running it on Mac OSX. I'm hoping to check this out and attempt to fix soon.
+Python script for analysing LabChart binary files containing MEP data. These must be in .adibin format, and you must know the number of trials in the file (you can check the original .adicht file in LabReader to determine this). It requires the numpy and scipy package libraries to run, and may have issues if not using Qt. The easiest way to ensure you have these is to use a Python distribution such as Anaconda. Using Anaconda, it has been tested as working on Windows and MacOSX with both Python 2 and 3.
 
 
 Please check the mepconfig.py file and tailor to your particular paradigm before use. The overall analysis pipeline can be altered by commenting/uncommenting lines 30 through 34 in Analyser.py. 
