@@ -23,9 +23,9 @@ peak_detection = 'height'
 # Beginning and end time (in milliseconds) to look for peaks. End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-peak_time_window = (20,50)
+peak_time_window = (10,50)
 # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without this limit; set to float('Inf') to ignore
-peak_max_ptp_interval = 15
+peak_max_ptp_interval = 40
 # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down if no peaks/valleys are found); set to zero to ignore
 # N.B. This is also used for Height analysis
 peak_prominence = 50
@@ -34,7 +34,7 @@ time_window_detection = 'auc'
 # Beginning and end time (in milliseconds) to look for peaks. End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-time_window_boundary = (10,None)
+time_window_boundary = (5,None)
 # Minimum prominence for peak-detection will reduce by this factor each time detection fails                
 prominence_correction_factor = 0.2
 # Adibin header parameters
