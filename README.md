@@ -23,6 +23,8 @@ Figure Controls:
 
 &nbsp;&nbsp;&nbsp;&nbsp;4: Toggle MEP Voltage rejection
 
+&nbsp;&nbsp;&nbsp;&nbsp;5: Toggle Other rejection
+
 &nbsp;&nbsp;&nbsp;&nbsp;Backspace: Clear all rejection criteria
 
 &nbsp;&nbsp;&nbsp;&nbsp;Left/Right arrow: Cycle backward/forward through trials
