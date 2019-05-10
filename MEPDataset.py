@@ -105,7 +105,7 @@ class MEPDataset(object):
                 # Min difference (after onset) is MEP offset
                 offset = np.argmin(integrated_profile[onset:]) + onset
         else:
-            onset,offset = boundary
+            onset,offset = (x - boundary[0] for x in boundary)
         if onset is not None:
             if method.upper() == 'RMS':
                 # Get rms amplitude
