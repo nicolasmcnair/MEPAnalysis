@@ -48,10 +48,10 @@ class MEPDataset(object):
         # Calculate first derivative
         derivative = np.diff(sample_data)
         # Replace all zero points in diff (N.B. left point used as anchor when flat)
-        zeros, = np.where(derivative == 0)
-        while len(zeros):
+        zeros, = np.where(np.trim_zeros(derivative,'b') == 0)
+        while zeros.size:
             derivative[zeros] = np.hstack([derivative[1:], 0.])[zeros]
-            zeros, = np.where(derivative == 0)
+            zeros, = np.where(np.trim_zeros(derivative,'b') == 0)
         # Detect peak locations from the derivative
         peak_locs = np.where((np.hstack([derivative, 0.]) < 0.) & (np.hstack([0., derivative]) > 0.))[0]
 
