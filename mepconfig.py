@@ -1,7 +1,7 @@
 # The polarity of the MEP deflection. Set to -1 for Negative-Positive MEP, or 1 for Positive-Negative MEP
 polarity = -1
-# Whether to apply a detrend to the data. Allowed values: 'linear', 'constant', or None
-detrend = 'linear'
+# Whether to apply a detrend to the data. Allowed values: 'linear', 'constant', 'baseline', or None (N.B. baseline will use the background_boundary definition)
+detrend = 'baseline'
 # Output file time window (in milliseconds). End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None

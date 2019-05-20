@@ -126,6 +126,16 @@ class MEPDataset(object):
 
         return [window_amplitude, onset, offset]
 
+    def _parse_boundary(self,boundary):
+        return (0 if boundary[0] is None else self.time_to_sample(min((boundary[0],-self.header['pretrigger_time']),key=abs)),
+                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
+
+    def time_to_sample(self, time_point):
+        return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
+
+    def sample_to_time(self, sample_point):
+        return (sample_point * self.header['sample_rate']) - self.header['pretrigger_time']
+
     def __init__(self,
                  mep_file,
                  n_trials,
@@ -204,7 +214,11 @@ class MEPDataset(object):
                 # Create data array
                 self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
                 if detrend_data:
-                    self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_data)
+                    if detrend_data == 'baseline':
+                        for trial_num,trial in enumerate(self.channels[channel]['data']):
+                            self.channels[channel]['data'][trial_num] -= np.mean(self.channels[channel]['data'][trial_num][slice(*[self.time_to_sample(x) for x in mepconfig.background_boundary])])
+                    else:
+                        self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_data)
                 self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
                 self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
                 self.channels[channel]['rejected'] = None
@@ -307,17 +321,6 @@ class MEPDataset(object):
                 if rejected_other_index:
                     self.channels[channel]['header']['rejected']['other'] = True
                     self.channels[channel]['rejected']['other'] = rejected_other_data[slice(*channel_indices[channel])]
-
-
-    def _parse_boundary(self,boundary):
-        return (0 if boundary[0] is None else self.time_to_sample(min((boundary[0],-self.header['pretrigger_time']),key=abs)),
-                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
-
-    def time_to_sample(self, time_point):
-        return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
-
-    def sample_to_time(self, sample_point):
-        return (sample_point * self.header['sample_rate']) - self.header['pretrigger_time']
 
     def detect_bad_meps(self,
                         method=mepconfig.bad_mep_detection_method,
