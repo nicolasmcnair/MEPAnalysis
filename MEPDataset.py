@@ -339,15 +339,15 @@ class MEPDataset(object):
                 channel['rejected'].update({'mep_voltage': None,'mep_sd': None})
             # If doing SD rejection, get mean and SD for MEPs
             if method.upper() in {'SD','BOTH'}:
-                mep_values = [trial_data[0] for trial_data in channel['ptp']]
+                mep_values = [trial_data[0] for trial_data in channel['ptp'] if trial_data[0] is not None]
                 min_mep_threshold = np.mean(mep_values) - (np.std(mep_values) * sd_threshold)
                 max_mep_threshold = np.mean(mep_values) + (np.std(mep_values) * sd_threshold)
             # Handle voltage detection
             if method.upper() in {'VOLTAGE','BOTH'}:
-                channel['rejected']['mep_voltage'] = [trial_mep[0] < voltage_threshold for trial_mep in channel['ptp']]
+                channel['rejected']['mep_voltage'] = [trial_mep[0] < voltage_threshold if trial_mep[0] is not None else False for trial_mep in channel['ptp']]
             # Handle SD detection
             if method.upper() in {'SD','BOTH'}:
-                channel['rejected']['mep_sd'] = [trial_mep[0] < min_mep_threshold or trial_mep > max_mep_threshold for trial_mep in channel['ptp']]
+                channel['rejected']['mep_sd'] = [trial_mep[0] < min_mep_threshold if trial_data[0] is not None else False or trial_mep > max_mep_threshold for trial_mep in channel['ptp']]
 
     def detect_background_movement(self,
                                    method=mepconfig.background_detection,
