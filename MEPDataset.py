@@ -47,7 +47,7 @@ class MEPDataset(object):
         sample_data = data[slice(*boundary)]
         # Calculate first derivative
         derivative = np.diff(sample_data)
-        # Replace all zero points in diff (N.B. left point used as anchor when flat)
+        # Replace all zero points in diff (N.B. left point used as anchor when flat) - ignoring flatlines at the end of the data
         zeros, = np.where(np.trim_zeros(derivative,'b') == 0)
         while zeros.size:
             derivative[zeros] = np.hstack([derivative[1:], 0.])[zeros]
@@ -494,7 +494,7 @@ class MEPDataset(object):
                             trial_string += ['1'] if channel['rejected']['mep_voltage'][trial] else ['']
                         elif any([channel['header']['rejected']['mep'] for channel in self.channels]):
                             trial_string += ['-','-']
-                        if channel['header']['rejected']['mep']:
+                        if channel['header']['rejected']['other']:
                             trial_string += ['1'] if channel['rejected']['other'][trial] else ['']
                         elif any([channel['header']['rejected']['other'] for channel in self.channels]):
                             trial_string += ['-']

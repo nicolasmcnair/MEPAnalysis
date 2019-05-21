@@ -338,3 +338,5 @@ def plot_data(mep_dataset,query_type):
                 queryManager(channel,mep_dataset.header,'time_window')
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
+        if any(channel['rejected']['other']):
+            channel['header']['rejected']['other'] = True
