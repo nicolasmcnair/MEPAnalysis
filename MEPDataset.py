@@ -480,10 +480,16 @@ class MEPDataset(object):
                             if channel['header']['time_window']:
                                 trial_string += ['','','']
                         else:
-                            if channel['header']['ptp'] and channel['ptp'][trial][0]:
-                                trial_string += [channel['ptp'][trial][0]] + [self.sample_to_time(x) for x in channel['ptp'][trial][1:]]
-                            if channel['header']['time_window'] and channel['time_window'][trial][0]:
-                                trial_string += [channel['time_window'][trial][0]] + [self.sample_to_time(x) for x in channel['time_window'][trial][1:]]
+                            if channel['header']['ptp']:
+                                if channel['ptp'][trial][0]:
+                                    trial_string += [channel['ptp'][trial][0]] + [self.sample_to_time(x) for x in channel['ptp'][trial][1:]]
+                                else:
+                                    trial_string += ['','','']
+                            if channel['header']['time_window']:
+                                if channel['time_window'][trial][0]:
+                                    trial_string += [channel['time_window'][trial][0]] + [self.sample_to_time(x) for x in channel['time_window'][trial][1:]]
+                                else:
+                                    trial_string += ['','','']
                         if channel['header']['rejected']['background']:
                             trial_string += ['1'] if channel['rejected']['background_sd'][trial] else ['']
                             trial_string += ['1'] if channel['rejected']['background_voltage'][trial] else ['']
