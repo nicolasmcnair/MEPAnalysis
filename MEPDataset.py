@@ -9,6 +9,12 @@ from sys import version_info
 from scipy.signal import detrend
 from struct import unpack_from
 from plotmep import plot_data
+import warnings
+warnings.simplefilter(action = "ignore", category = FutureWarning)
+try:
+    from tkMessageBox import askokcancel
+except ModuleNotFoundError:
+    from tkinter.messagebox import askokcancel
 
 class MEPDataset(object):
 
@@ -127,9 +133,8 @@ class MEPDataset(object):
         return [window_amplitude, onset, offset]
 
     def _parse_boundary(self,boundary):
-        # Add one to end boundary to account for end-exclusiveness
         return (0 if boundary[0] is None else self.time_to_sample(min((boundary[0],-self.header['pretrigger_time']),key=abs)),
-                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)) + 1)
+                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
 
     def time_to_sample(self, time_point):
         return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
@@ -181,7 +186,10 @@ class MEPDataset(object):
             # Validate number of trials
             self.header['samples_per_trial'],remainder = divmod(n_samples, self.header['n_trials'])
             if remainder:
-                raise ValueError('Number of trials do not match number of samples.')
+                if not askokcancel('Sample mismatch','Number of samples are not equal across all trials.\nPress OK to pad last trial.'):
+                    raise ValueError('Number of trials do not match number of samples.')
+                else:
+                    self.header['samples_per_trial'] += 1
             self.header['posttrigger_time'] = self.sample_to_time(self.header['samples_per_trial'])
 
             # Read in channel headers
@@ -213,7 +221,10 @@ class MEPDataset(object):
             # Extract interleaved channel data (time channel is first, if present)
             for channel in range(self.header['n_channels']):
                 # Create data array
-                self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
+                channel_data = adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]
+                if remainder:
+                    channel_data += ((channel_data[-1],) * (self.header['n_trials'] - remainder))
+                self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in channel_data], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
                 if detrend_data:
                     if detrend_data == 'baseline':
                         for trial_num,trial in enumerate(self.channels[channel]['data']):
@@ -464,7 +475,7 @@ class MEPDataset(object):
             # Get output times
             start_time = boundary[0]
             end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
-            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in range(int((end_time - start_time) / self.header['sample_rate']) + 1)]
+            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in range(int((end_time - start_time) / self.header['sample_rate']))]
             boundary = self._parse_boundary(boundary)
 
             # Write to file

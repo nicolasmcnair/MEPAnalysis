@@ -162,18 +162,18 @@ class queryManager(object):
             self.points['original'][idx] = self.points['user'][idx]
 
     def get_mep_info(self):
-        if all(self.points['user'][0]):
-            p1,p2 = self.points['user'][0][1:3]
+        if all(self.points['user'][self.current_trial]):
+            p1,p2 = self.points['user'][self.current_trial][1:3]
             if self.query_type == 'time_window':
                 if self.method == 'RMS':
-                    time_window_data = np.sqrt(np.mean(np.square(self.data[0][p1:p2 + 1])))
+                    time_window_data = np.sqrt(np.mean(np.square(self.data[self.current_trial][p1:p2 + 1])))
                 if self.method == 'AVERAGE':
-                    time_window_data = np.mean(self.data[0][p1:p2 + 1])
+                    time_window_data = np.mean(self.data[self.current_trial][p1:p2 + 1])
                 if self.method == 'AUC':
-                    time_window_data = np.trapz(self.data[0][p1:p2 + 1],dx=1)
+                    time_window_data = np.trapz(self.data[self.current_trial][p1:p2 + 1],dx=1)
                 return ' -> ' + self.method + ': {:.2f}'.format(time_window_data)
             elif self.query_type == 'ptp':
-                return ' -> PTP: {:.2f}'.format(abs(self.data[0][p1] - self.data[0][p2]))
+                return ' -> PTP: {:.2f}'.format(abs(self.data[self.current_trial][p1] - self.data[self.current_trial][p2]))
         else:
             return ' -> ' + self.method + ': -'
 

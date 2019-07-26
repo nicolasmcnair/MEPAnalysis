@@ -5,7 +5,7 @@ detrend = 'linear'#'baseline'
 # Output file time window (in milliseconds). End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-output_time_window = (-15, 25)#(-100, 50)
+output_time_window = (-100, 50)
 # Type of baseline movement detection: 'SD', 'Voltage', or 'Both'
 background_detection = 'both'
 # Beginning and end time (in milliseconds) to look for baseline movement. End-inclusive
