@@ -62,6 +62,9 @@ class queryManager(object):
 
     def __init__(self,channel, header, query_type):
         self.channel_name = channel['header']['title']
+        self.method = query_type.upper()
+        if query_type != 'ptp':
+            query_type = 'time_window'
         self.query_type = query_type
         self.current_trial = 0
         self.current_plot = None
@@ -70,6 +73,7 @@ class queryManager(object):
         self.axes = self.fig.add_subplot(1,1,1)
         self.fig.canvas.draw()
         self.points = {}
+        self.reject_flag = False
         self.rejected = {'background':False,
                          'mep':False,
                          'other':True,
@@ -94,8 +98,6 @@ class queryManager(object):
             self.fill = None
             self.data = channel['data']
         self.n_trials = header['n_trials']
-        #if not any(channel['header']['rejected'].values()):
-        #    channel['header']['rejected']['background'] = channel['header']['rejected']['mep'] = True
         channel['rejected']['other'] = [False] * header['n_trials']
         self.rejected['original']['other'] = channel['rejected']['other']
         self.rejected['user']['other'] = channel['rejected']['other'][:]
@@ -145,6 +147,9 @@ class queryManager(object):
         self.update_display()
         plt.show()
 
+    def close(self):
+        plt.close()
+
     def update_points(self):
         for idx in range(len(self.points['original'])):
             if self.rejected['background']:
@@ -156,8 +161,23 @@ class queryManager(object):
             self.rejected['original']['other'][idx] = self.rejected['user']['other'][idx]
             self.points['original'][idx] = self.points['user'][idx]
 
+    def get_mep_info(self):
+        if all(self.points['user'][0]):
+            p1,p2 = self.points['user'][0][1:3]
+            if self.query_type == 'time_window':
+                if self.method == 'RMS':
+                    time_window_data = np.sqrt(np.mean(np.square(self.data[0][p1:p2 + 1])))
+                if self.method == 'AVERAGE':
+                    time_window_data = np.mean(self.data[0][p1:p2 + 1])
+                if self.method == 'AUC':
+                    time_window_data = np.trapz(self.data[0][p1:p2 + 1],dx=1)
+                return ' -> ' + self.method + ': {:.2f}'.format(time_window_data)
+            elif self.query_type == 'ptp':
+                return ' -> PTP: {:.2f}'.format(abs(self.data[0][p1] - self.data[0][p2]))
+        else:
+            return ' -> ' + self.method + ': -'
+
     def update_display(self):
-        self.fig.suptitle(self.channel_name + ': Trial ' + str(self.current_trial + 1))
         self.current_plot.set_ydata(self.data[self.current_trial])
         if self.rejected['user']['other'][self.current_trial] or (self.rejected['background'] and (self.rejected['user']['background_sd'][self.current_trial] or self.rejected['user']['background_voltage'][self.current_trial])) or (self.rejected['mep'] and (self.rejected['user']['mep_sd'][self.current_trial] or self.rejected['user']['mep_voltage'][self.current_trial])):
             self.current_plot.set_c(queryManager.colours['bad_plot'])
@@ -182,6 +202,7 @@ class queryManager(object):
             self.axes.set_ylim([0,ylim])
         elif self.query_type == 'ptp':
             self.axes.set_ylim([-ylim,ylim])
+        self.fig.suptitle(self.channel_name + ': Trial ' + str(self.current_trial + 1) + self.get_mep_info())
         if self.fill:
             self.fill.remove()
             del self.fill
@@ -228,7 +249,7 @@ class queryManager(object):
         if event.key == 'enter':
             if askokcancel('Accept?','Accept all trials?'):
                 self.update_points()
-                plt.close()
+                self.close()
         elif event.key == 'backspace':
             self.current_plot.set_c(queryManager.colours['good_plot'])
             self.text_box.set_text('')
@@ -297,30 +318,24 @@ class queryManager(object):
                 self.cursor.update(self.data[new_trial])
 
     def mouse_press(self,event):
-        if (event.button == 1) and event.xdata:
-            self.points['user'][self.current_trial][1] = int(round(self.cursor.annotation.xy[0]))
-            self.user_markers['peak1'].xy = (self.points['user'][self.current_trial][1],self.data[self.current_trial][self.points['user'][self.current_trial][1]])
-            self.user_markers['peak1'].set_visible(True)
-            self.axes.draw_artist(self.user_markers['peak1'])
+        if event.button in {1,3} and event.xdata:
+            if event.button == 1:
+                self.points['user'][self.current_trial][1] = int(round(self.cursor.annotation.xy[0]))
+                self.user_markers['peak1'].xy = (self.points['user'][self.current_trial][1],self.data[self.current_trial][self.points['user'][self.current_trial][1]])
+                self.user_markers['peak1'].set_visible(True)
+                self.axes.draw_artist(self.user_markers['peak1'])
+            elif event.button == 3:
+                self.points['user'][self.current_trial][2] = int(round(self.cursor.annotation.xy[0]))
+                self.user_markers['peak2'].xy = (self.points['user'][self.current_trial][2],self.data[self.current_trial][self.points['user'][self.current_trial][2]])
+                self.user_markers['peak2'].set_visible(True)
+                self.axes.draw_artist(self.user_markers['peak2'])
             if (self.query_type == 'time_window') and self.points['user'][self.current_trial][1] and self.points['user'][self.current_trial][2]:
                 if self.fill:
                     self.fill.remove()
                     del self.fill
                     self.fill = None
                 self.fill = self.axes.fill_between(range(*self.points['user'][self.current_trial][1:]),self.data[self.current_trial][self.points['user'][self.current_trial][1]:self.points['user'][self.current_trial][2]],facecolor=queryManager.colours['fill'])
-            self.fig.canvas.draw()
-            self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
-        elif (event.button == 3) and event.xdata:
-            self.points['user'][self.current_trial][2] = int(round(self.cursor.annotation.xy[0]))
-            self.user_markers['peak2'].xy = (self.points['user'][self.current_trial][2],self.data[self.current_trial][self.points['user'][self.current_trial][2]])
-            self.user_markers['peak2'].set_visible(True)
-            self.axes.draw_artist(self.user_markers['peak2'])
-            if (self.query_type == 'time_window') and self.points['user'][self.current_trial][1] and self.points['user'][self.current_trial][2]:
-                if self.fill:
-                    self.fill.remove()
-                    del self.fill
-                    self.fill = None
-                self.fill = self.axes.fill_between(range(*self.points['user'][self.current_trial][1:]),self.data[self.current_trial][self.points['user'][self.current_trial][1]:self.points['user'][self.current_trial][2]],facecolor=queryManager.colours['fill'])
+            self.fig.suptitle(self.channel_name + ': Trial ' + str(self.current_trial + 1) + self.get_mep_info())
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
@@ -333,9 +348,10 @@ def plot_data(mep_dataset,query_type):
                 queryManager(channel,mep_dataset.header,'ptp')
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
-        if 'time_window' in query_type:
+            query_type.remove('ptp')
+        if query_type:
             if channel['time_window']:
-                queryManager(channel,mep_dataset.header,'time_window')
+                queryManager(channel,mep_dataset.header,query_type[0])
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
         if any(channel['rejected']['other']):

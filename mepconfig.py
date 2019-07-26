@@ -1,11 +1,11 @@
 # The polarity of the MEP deflection. Set to -1 for Negative-Positive MEP, or 1 for Positive-Negative MEP
 polarity = -1
 # Whether to apply a detrend to the data. Allowed values: 'linear', 'constant', 'baseline', or None (N.B. baseline will use the background_boundary definition)
-detrend = 'baseline'
+detrend = 'linear'#'baseline'
 # Output file time window (in milliseconds). End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-output_time_window = (-50, 100)
+output_time_window = (-15, 25)#(-100, 50)
 # Type of baseline movement detection: 'SD', 'Voltage', or 'Both'
 background_detection = 'both'
 # Beginning and end time (in milliseconds) to look for baseline movement. End-inclusive
@@ -21,7 +21,7 @@ peak_detection = 'height'
 # Beginning and end time (in milliseconds) to look for peaks. End-inclusive
 # To start the time window from the beginning of the data, set the first value to None
 # To end the time window at the end of the data, set the second value to None
-peak_time_window = (15,50)
+peak_time_window = (18,38)
 # Maximum time allowed between P1 and P2; if no suitable P2 is identified it will re-look without this limit; set to float('Inf') to ignore
 peak_max_ptp_interval = 40
 # Minimum peak prominence (in microVolts) to qualify for retention (will iterate down if no peaks/valleys are found); set to zero to ignore

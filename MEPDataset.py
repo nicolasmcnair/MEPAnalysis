@@ -127,8 +127,9 @@ class MEPDataset(object):
         return [window_amplitude, onset, offset]
 
     def _parse_boundary(self,boundary):
+        # Add one to end boundary to account for end-exclusiveness
         return (0 if boundary[0] is None else self.time_to_sample(min((boundary[0],-self.header['pretrigger_time']),key=abs)),
-                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
+                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)) + 1)
 
     def time_to_sample(self, time_point):
         return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
@@ -221,7 +222,7 @@ class MEPDataset(object):
                         self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_data)
                 self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
                 self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
-                self.channels[channel]['rejected'] = None
+                self.channels[channel]['rejected'] = {}
             del adibin_data
 
         # Read ASCII file
@@ -288,7 +289,8 @@ class MEPDataset(object):
                 self.channels[channel]['header']['ptp'] = self.channels[channel]['header']['time_window'] = False
                 self.channels[channel]['header']['time_window_method'] = None
                 self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
-                self.channels[channel]['rect'] = self.channels[channel]['rejected'] = None
+                self.channels[channel]['rect'] = None
+                self.channels[channel]['rejected'] = {}
                 # Read in channel data
                 self.channels[channel]['data'] = data[slice(*channel_indices[channel])]
                 self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
@@ -336,7 +338,7 @@ class MEPDataset(object):
             if not channel['header']['ptp']:
                 raise RuntimeError('Peak-to-peaks values must first be calculated before they can be evaluated for bad values.')
             channel['header']['rejected']['mep'] = True
-            if channel['rejected'] is None:
+            if not channel['rejected']:
                 channel['rejected'] = {'mep_voltage': None,'mep_sd': None}
             else:
                 channel['rejected'].update({'mep_voltage': None,'mep_sd': None})
@@ -365,7 +367,7 @@ class MEPDataset(object):
         # Detect background movement
         for channel in self.channels:
             channel['header']['rejected']['background'] = True
-            if channel['rejected'] is None:
+            if not channel['rejected']:
                 channel['rejected'] = {'background_voltage': None,'background_sd': None}
             else:
                 channel['rejected'].update({'background_voltage': None,'background_sd': None})
@@ -512,7 +514,7 @@ class MEPDataset(object):
         # If no query type provided, then query whatever exists
         if query_type is None:
             query_type = ['ptp'] if any([channel['header']['ptp'] for channel in self.channels]) else []
-            query_type += ['time_window'] if any([channel['header']['time_window'] for channel in self.channels]) else []
+            query_type += [channel['header']['time_window_method'].upper()] if any([channel['header']['time_window'] for channel in self.channels]) else []
         # Pass to plot_data
         plot_data(self,query_type)
         # If we queried the ptp data, then recalculate the ptp values
@@ -521,7 +523,7 @@ class MEPDataset(object):
                 if channel['header']['ptp']:
                     channel['ptp'] = [[channel['data'][trial][p1]-channel['data'][trial][p2],p1,p2] if None not in (p1,p2) else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['ptp'])]
         # If we queried the time window data, then recalculate the time window values
-        if 'time_window' in query_type:
+        if MEPDataset.TIME_WINDOW_DETECTION_METHODS & set(query_type):
             for channel in self.channels:
                 if channel['header']['time_window']:
                     if channel['header']['time_window_method'].upper() == 'RMS':
