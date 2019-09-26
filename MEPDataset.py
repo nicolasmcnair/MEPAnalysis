@@ -363,7 +363,7 @@ class MEPDataset(object):
                 channel['rejected']['mep_voltage'] = [trial_mep[0] < voltage_threshold if trial_mep[0] is not None else False for trial_mep in channel['ptp']]
             # Handle SD detection
             if method.upper() in {'SD','BOTH'}:
-                channel['rejected']['mep_sd'] = [trial_mep[0] < min_mep_threshold if trial_data[0] is not None else False or trial_mep > max_mep_threshold for trial_mep in channel['ptp']]
+                channel['rejected']['mep_sd'] = [trial_mep[0] < min_mep_threshold if trial_mep[0] is not None else False or trial_mep > max_mep_threshold for trial_mep in channel['ptp']]
 
     def detect_background_movement(self,
                                    method=mepconfig.background_detection,
@@ -525,7 +525,7 @@ class MEPDataset(object):
         # If no query type provided, then query whatever exists
         if query_type is None:
             query_type = ['ptp'] if any([channel['header']['ptp'] for channel in self.channels]) else []
-            query_type += [channel['header']['time_window_method'].upper()] if any([channel['header']['time_window'] for channel in self.channels]) else []
+            query_type += [self.channels[x]['header']['time_window_method'].upper() for x in [idx for idx,channel in enumerate(self.channels) if channel['header']['time_window']]]
         # Pass to plot_data
         plot_data(self,query_type)
         # If we queried the ptp data, then recalculate the ptp values
