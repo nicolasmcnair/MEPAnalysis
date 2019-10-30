@@ -163,19 +163,9 @@ class queryManager(object):
 
     def get_mep_info(self):
         if all(self.points['user'][self.current_trial]):
-            p1,p2 = self.points['user'][self.current_trial][1:3]
-            if self.query_type == 'time_window':
-                if self.method == 'RMS':
-                    time_window_data = np.sqrt(np.mean(np.square(self.data[self.current_trial][p1:p2 + 1])))
-                if self.method == 'AVERAGE':
-                    time_window_data = np.mean(self.data[self.current_trial][p1:p2 + 1])
-                if self.method == 'AUC':
-                    time_window_data = np.trapz(self.data[self.current_trial][p1:p2 + 1],dx=1)
-                return ' -> ' + self.method + ': {:.2f}'.format(time_window_data)
-            elif self.query_type == 'ptp':
-                return ' -> PTP: {:.2f}'.format(abs(self.data[self.current_trial][p1] - self.data[self.current_trial][p2]))
+            return ' -> ' + self.method.upper() +  ': {:.2f}'.format(self.points['user'][self.current_trial][0])
         else:
-            return ' -> ' + self.method + ': -'
+            return ' -> ' + self.method.upper() + ': -'
 
     def update_display(self):
         self.current_plot.set_ydata(self.data[self.current_trial])
@@ -329,12 +319,24 @@ class queryManager(object):
                 self.user_markers['peak2'].xy = (self.points['user'][self.current_trial][2],self.data[self.current_trial][self.points['user'][self.current_trial][2]])
                 self.user_markers['peak2'].set_visible(True)
                 self.axes.draw_artist(self.user_markers['peak2'])
-            if (self.query_type == 'time_window') and self.points['user'][self.current_trial][1] and self.points['user'][self.current_trial][2]:
-                if self.fill:
-                    self.fill.remove()
-                    del self.fill
-                    self.fill = None
-                self.fill = self.axes.fill_between(range(*self.points['user'][self.current_trial][1:]),self.data[self.current_trial][self.points['user'][self.current_trial][1]:self.points['user'][self.current_trial][2]],facecolor=queryManager.colours['fill'])
+
+            p1,p2 = self.points['user'][self.current_trial][1:3]
+            if all({p1,p2}):
+                if self.query_type == 'time_window':
+                    if self.method == 'RMS':
+                        self.points['user'][self.current_trial][0] = np.sqrt(np.mean(np.square(self.data[self.current_trial][p1:p2 + 1])))
+                    if self.method == 'AVERAGE':
+                        self.points['user'][self.current_trial][0] = np.mean(self.data[self.current_trial][p1:p2 + 1])
+                    if self.method == 'AUC':
+                        self.points['user'][self.current_trial][0] = np.trapz(self.data[self.current_trial][p1:p2 + 1],dx=1)
+                    if self.fill:
+                        self.fill.remove()
+                        del self.fill
+                        self.fill = None
+                    self.fill = self.axes.fill_between(range(*self.points['user'][self.current_trial][1:]),self.data[self.current_trial][self.points['user'][self.current_trial][1]:self.points['user'][self.current_trial][2]],facecolor=queryManager.colours['fill'])
+                elif self.query_type == 'ptp':
+                    self.points['user'][self.current_trial][0] = abs(self.data[self.current_trial][p1] - self.data[self.current_trial][p2])
+
             self.fig.suptitle(self.channel_name + ': Trial ' + str(self.current_trial + 1) + self.get_mep_info())
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
