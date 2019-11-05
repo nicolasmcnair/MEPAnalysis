@@ -133,8 +133,8 @@ class MEPDataset(object):
         return [window_amplitude, onset, offset]
 
     def _parse_boundary(self,boundary):
-        return (0 if boundary[0] is None else self.time_to_sample(max((boundary[0],-self.header['pretrigger_time']),key=abs)),
-                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']),key=abs)))
+        return (0 if boundary[0] is None else self.time_to_sample(max((boundary[0],-self.header['pretrigger_time']))),
+                None if boundary[1] is None else self.time_to_sample(min((boundary[1] + self.header['sample_rate'],self.header['posttrigger_time']))))
 
     def time_to_sample(self, time_point):
         return int((time_point + self.header['pretrigger_time']) // self.header['sample_rate'])
