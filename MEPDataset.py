@@ -199,13 +199,15 @@ class MEPDataset(object):
                 channel_header = deque(unpack_from("<64c4d", adibin_contents, offset))
                 self.channels[channel] = {'header':{}}
                 if convert_from_bytes:
-                    self.channels[channel]['header']['title'] = ''.join([channel_header.popleft().decode('ascii') for _ in range(32)]).replace('\x00', '')
-                    self.channels[channel]['header']['units'] = ''.join([channel_header.popleft().decode('ascii') for _ in range(32)]).replace('\x00', '')
+                    self.channels[channel]['header']['title'] = ''.join([channel_header.popleft().decode('latin-1') for _ in range(32)]).replace('\x00', '')
+                    self.channels[channel]['header']['units'] = ''.join([channel_header.popleft().decode('latin-1') for _ in range(32)]).replace('\x00', '')
                 else:
                     self.channels[channel]['header']['title'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
                     self.channels[channel]['header']['units'] = ''.join([channel_header.popleft() for _ in range(32)]).replace('\x00', '')
                 # Adjust scale to incoporate voltage correction (so output is in microvolts)
-                self.channels[channel]['header']['scale'] = channel_header.popleft() * [1000000,1000,1][(['V', 'mV', '?V'].index(self.channels[channel]['header']['units']))]
+                if self.channels[channel]['header']['units'] == '?V':
+                    self.channels[channel]['header']['units'] = 'µV'
+                self.channels[channel]['header']['scale'] = channel_header.popleft() * [1000000,1000,1][(['V', 'mV', 'µV'].index(self.channels[channel]['header']['units']))]
                 self.channels[channel]['header']['offset'] = channel_header.popleft()
                 self.channels[channel]['header']['rejected'] = {'background':False,'mep':False,'other':False}
                 self.channels[channel]['header']['ptp'] = self.channels[channel]['header']['time_window'] = False
