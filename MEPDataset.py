@@ -1,4 +1,3 @@
-from __future__ import division
 import mepconfig
 import numpy as np
 from collections import deque
@@ -11,10 +10,7 @@ from struct import unpack_from
 from plotmep import plot_data
 import warnings
 warnings.simplefilter(action = "ignore", category = FutureWarning)
-try:
-    from tkMessageBox import askokcancel
-except ModuleNotFoundError:
-    from tkinter.messagebox import askokcancel
+from tkinter.messagebox import askokcancel
 
 class MEPDataset(object):
 

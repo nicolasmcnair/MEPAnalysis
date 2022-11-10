@@ -1,9 +1,6 @@
 import warnings
 warnings.simplefilter(action = "ignore", category = FutureWarning)
-try:
-    from tkMessageBox import askokcancel
-except ModuleNotFoundError:
-    from tkinter.messagebox import askokcancel
+from tkinter.messagebox import askokcancel
 import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
@@ -69,7 +66,8 @@ class queryManager(object):
         self.current_trial = 0
         self.current_plot = None
         self.fig = plt.figure()
-        self.fig.canvas.set_window_title(header['file'])      
+        self.fig.canvas.manager.window.raise_()
+        self.fig.canvas.manager.set_window_title(header['file'])      
         self.axes = self.fig.add_subplot(1,1,1)
         self.fig.canvas.draw()
         self.points = {}
@@ -146,7 +144,7 @@ class queryManager(object):
         self.cursor = dataCursor(self.axes, range(len(self.data[0])), self.data[0],header['sample_rate'], -header['pretrigger_time'])
         self.update_display()
         plt.show()
-
+        
     def close(self):
         plt.close()
 
