@@ -216,6 +216,15 @@ class MEPDataset(object):
             adibin_data = unpack_from("<" + str((self.header['n_channels'] + time_channel) * n_samples) + data_format,adibin_contents,offset)
             del adibin_contents
 
+            # Parse detrend
+            if detrend_data is not None:
+                if detrend_data.lower() == 'linear_baseline':
+                    detrend_data = ['linear','baseline']
+                else:
+                    detrend_data = [detrend_data]
+            else:
+                detrend_data = []
+
             # Extract interleaved channel data (time channel is first, if present)
             for channel in range(self.header['n_channels']):
                 # Create data array
@@ -223,12 +232,12 @@ class MEPDataset(object):
                 if remainder:
                     channel_data += ((channel_data[-1],) * (self.header['n_trials'] - remainder))
                 self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in channel_data], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
-                if detrend_data:
-                    if detrend_data == 'baseline':
+                for detrend_type in detrend_data:
+                    if detrend_type == 'baseline':
                         for trial_num,trial in enumerate(self.channels[channel]['data']):
                             self.channels[channel]['data'][trial_num] -= np.mean(self.channels[channel]['data'][trial_num][slice(*[self.time_to_sample(x) for x in mepconfig.background_boundary])])
                     else:
-                        self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_data)
+                        self.channels[channel]['data'] = detrend(self.channels[channel]['data'],type=detrend_type)
                 self.channels[channel]['rect'] = np.fabs(self.channels[channel]['data'])
                 self.channels[channel]['ptp'] = self.channels[channel]['time_window'] = [None,None,None]
                 self.channels[channel]['rejected'] = {}
