@@ -41,8 +41,8 @@ bad_mep_detection_method = 'SD'
 bad_mep_outlier_sds = 3
 # Threshold for minimum mep amplitude (in microVolts)
 bad_mep_min_voltage = 50
-# Retain MEP values for rejected trials
-retain_rejected_mep = True
+# Remove MEP values for rejected trials
+remove_rejected_mep = True
 # Adibin header parameters
 adibin_file_header_fmt_string = '<4sld5l2d4l'
 adibin_file_header_byte_length = 68
