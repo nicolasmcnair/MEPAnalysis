@@ -485,7 +485,7 @@ class MEPDataset(object):
                 for channel in self.channels:
                     for trial in range(self.header['n_trials']):
                         trial_string = [channel['header']['title'], trial + 1]
-                        if any(channel['header']['rejected'].values()) and any([channel['rejected'][rejection_criterion][trial] if channel['rejected'][rejection_criterion] is not None else False for rejection_criterion in channel['rejected']]):
+                        if mepconfig.retain_rejected_mep and (any(channel['header']['rejected'].values()) and any([channel['rejected'][rejection_criterion][trial] if channel['rejected'][rejection_criterion] is not None else False for rejection_criterion in channel['rejected']])):
                             if channel['header']['ptp']:
                                 trial_string += ['','','']
                             if channel['header']['time_window']:
