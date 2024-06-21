@@ -231,7 +231,7 @@ class MEPDataset(object):
                 channel_data = adibin_data[channel + time_channel::self.header['n_channels'] + time_channel]
                 if remainder:
                     channel_data += ((channel_data[-1],) * (self.header['n_trials'] - remainder))
-                self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in channel_data], dtype=np.float).reshape(self.header['n_trials'], self.header['samples_per_trial'])
+                self.channels[channel]['data'] = np.array([(self.channels[channel]['header']['scale'] * (x + self.channels[channel]['header']['offset'])) * polarity for x in channel_data], dtype=np.float64).reshape(self.header['n_trials'], self.header['samples_per_trial'])
                 for detrend_type in detrend_data:
                     if detrend_type == 'baseline':
                         for trial_num,trial in enumerate(self.channels[channel]['data']):
@@ -284,21 +284,21 @@ class MEPDataset(object):
             channel_indices = zip(channel_indices,channel_indices[1:] + [len(channel_column)])
             # Get data
             ptp_data = window_data = rejected_background_sd_data = rejected_background_voltage_data = rejected_mep_sd_index = rejected_mep_voltage_data = rejected_other_data = None
-            data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(time_index, len(header_line)))
+            data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=range(time_index, len(header_line)))
             if ptp_index:
-                ptp_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(ptp_index, ptp_index + 3), filling_values=None)
+                ptp_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=range(ptp_index, ptp_index + 3), filling_values=None)
             if window_index:
-                window_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=range(window_index, window_index + 3), filling_values=None)
+                window_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=range(window_index, window_index + 3), filling_values=None)
             if rejected_background_sd_index:
-                rejected_background_sd_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_background_sd_index], filling_values=False)
+                rejected_background_sd_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=[rejected_background_sd_index], filling_values=False)
             if rejected_background_voltage_index:
-                rejected_background_voltage_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_background_voltage_index], filling_values=False)
+                rejected_background_voltage_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=[rejected_background_voltage_index], filling_values=False)
             if rejected_mep_sd_index:
-                rejected_mep_sd_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_mep_sd_index], filling_values=False)
+                rejected_mep_sd_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=[rejected_mep_sd_index], filling_values=False)
             if rejected_mep_voltage_index:
-                rejected_mep_voltage_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_mep_voltage_index], filling_values=False)
+                rejected_mep_voltage_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=[rejected_mep_voltage_index], filling_values=False)
             if rejected_other_index:
-                rejected_other_data = np.genfromtxt(self.header['file'], dtype=np.float, delimiter=',', skip_header=1, usecols=[rejected_other_index], filling_values=False)
+                rejected_other_data = np.genfromtxt(self.header['file'], dtype=np.float64, delimiter=',', skip_header=1, usecols=[rejected_other_index], filling_values=False)
             # Sort through channels
             for channel in range(self.header['n_channels']):
                 self.channels.append({'header':{}})

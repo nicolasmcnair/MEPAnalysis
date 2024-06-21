@@ -17,8 +17,8 @@ plt.rcParams['keymap.zoom'] = ''
 class dataCursor(object):
     """Display the x,y location of the nearest data point."""
     def __init__(self, ax, x, y, rescale, shift, offsets=(-20, 20)):
-        self.x = np.asarray(x, dtype='float')
-        y = np.asarray(y, dtype='float')
+        self.x = np.asarray(x, dtype='float64')
+        y = np.asarray(y, dtype='float64')
         self._points = np.column_stack((x, y))
         self.rescale = rescale
         self.shift = shift
@@ -47,7 +47,7 @@ class dataCursor(object):
             event.canvas.blit(self.ax.bbox)
 
     def update(self,y):
-        y = np.asarray(y, dtype='float')
+        y = np.asarray(y, dtype='float64')
         self._points = np.column_stack((self.x, y))
         self.tree = spatial.cKDTree(self._points)
 
@@ -57,7 +57,7 @@ class queryManager(object):
     arrow_lengths = {'left':15,'right':15,'top':15,'bottom':15}
     colours = {'user':'red','original':'green','fill':'cyan','good_plot':'black','bad_plot':'red'}
 
-    def __init__(self,channel, header, query_type):
+    def __init__(self,channel, header, query_type,query_window):
         self.channel_name = channel['header']['title']
         self.method = query_type.upper()
         if query_type != 'ptp':
@@ -339,19 +339,19 @@ class queryManager(object):
             self.fig.canvas.draw()
             self.cursor.background = self.fig.canvas.copy_from_bbox(self.axes.bbox)
 
-def plot_data(mep_dataset,query_type):
+def plot_data(mep_dataset,query_type,query_window=None):
     # Cycle through channels
     for channel in mep_dataset.channels:
         # Pass all arguments to queryManager
         if 'ptp' in query_type:
             if channel['ptp']:
-                queryManager(channel,mep_dataset.header,'ptp')
+                queryManager(channel,mep_dataset.header,'ptp',query_window)
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
             query_type.remove('ptp')
         if query_type:
             if channel['time_window']:
-                queryManager(channel,mep_dataset.header,query_type[0])
+                queryManager(channel,mep_dataset.header,query_type[0],query_window)
             else:
                 raise ValueError('No peak-to-peak data found in MEPDataset.')
         if any(channel['rejected']['other']):
