@@ -40,4 +40,4 @@ Figure Controls:
 
 
 
-Further Note: At last time I checked, Analyser won't be able to let you supervise peak selection with Spyder when using Qt5Agg in Python 3. It will open a window displaying MEPs and, depending on how long the kernel stays running, will allow you to interact with it for a short while before freezing. The reasons for this are to do with Spyder/iPython and there is no satisfactory way for me to work around it.
+Note: At last time I checked, Analyser won't be able to let you supervise peak selection with Spyder when using Qt5Agg in Python 3. It will open a window displaying MEPs and, depending on how long the kernel stays running, will allow you to interact with it for a short while before freezing. The reasons for this are to do with Spyder/iPython and there is no satisfactory way for me to work around it.
