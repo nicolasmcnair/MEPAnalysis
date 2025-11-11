@@ -1,8 +1,6 @@
 import warnings
 warnings.simplefilter(action = "ignore", category = FutureWarning)
 from tkinter.messagebox import askokcancel
-import matplotlib
-matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.spatial as spatial
@@ -143,7 +141,7 @@ class queryManager(object):
         self.user_markers['peak2'] = self.axes.annotate(self.peak2_label,xy=(0,0),xytext=self.peak2_offset,textcoords="offset points",arrowprops={'facecolor':queryManager.colours['user'],'shrink':0.05,'headlength':self.peak2_arrowlength}, horizontalalignment='center',visible=False)
         self.cursor = dataCursor(self.axes, range(len(self.data[0])), self.data[0],header['sample_rate'], -header['pretrigger_time'])
         self.update_display()
-        plt.show()
+        plt.show(block=True)
         
     def close(self):
         plt.close()
