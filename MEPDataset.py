@@ -482,7 +482,7 @@ class MEPDataset(object):
             # Get output times
             start_time = boundary[0]
             end_time = boundary[1] or self.sample_to_time(self.header['samples_per_trial'])
-            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in range(int((end_time - start_time) / self.header['sample_rate']))]
+            header_string += [str(start_time + (x * self.header['sample_rate'])) for x in range(int((end_time - start_time) / self.header['sample_rate']) + 1)]
             boundary = self._parse_boundary(boundary)
 
             # Write to file
@@ -549,4 +549,5 @@ class MEPDataset(object):
                     if channel['header']['time_window_method'].upper() == 'AVERAGE':
                         channel['time_window'] = [[np.mean(channel['rect'][trial][p1:p2 + 1]),p1,p2] if None not in (p1,p2)  else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
                     if channel['header']['time_window_method'].upper() == 'AUC':
+
                         channel['time_window'] = [[np.trapz(channel['rect'][trial][p1:p2 + 1],dx=1),p1,p2] if None not in (p1,p2)  else [None,None,None] for trial,(_,p1,p2) in enumerate(channel['time_window'])]
